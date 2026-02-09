@@ -11,11 +11,11 @@ interface OllamaResponse {
 }
 
 // Model constant for Gemini 3 Flash
-const GEMINI_FLASH_MODEL = "gemini-1.5-flash"
-const GEMINI_PRO_MODEL = "gemini-1.5-pro"
+const GEMINI_FLASH_MODEL = "gemini-3-flash-preview"
+const GEMINI_PRO_MODEL = "gemini-3-pro-preview"
 const GROQ_MODEL = "llama-3.3-70b-versatile"
-const OPENAI_MODEL = "gpt-4o"
-const CLAUDE_MODEL = "claude-3-5-sonnet-20240620"
+const OPENAI_MODEL = "gpt-5.2-chat-latest"
+const CLAUDE_MODEL = "claude-sonnet-4-5"
 const MAX_OUTPUT_TOKENS = 65536
 
 // Simple prompt for image analysis (not interview copilot - kept separate)
