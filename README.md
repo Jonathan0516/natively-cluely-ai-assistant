@@ -188,6 +188,8 @@ Create a `.env` file:
 # Cloud AI
 GEMINI_API_KEY=your_key
 GROQ_API_KEY=your_key
+OPENAI_API_KEY=your_key
+CLAUDE_API_KEY=your_key
 GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/service-account.json
 
 # Local AI (Ollama)
