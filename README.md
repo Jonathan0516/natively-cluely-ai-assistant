@@ -357,3 +357,10 @@ Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
 If you run or modify this software over a network, you must provide the full source code under the same license.
 
 > **Note:** This project is available for sponsorships, ads, or partnerships – perfect for companies in the AI, productivity, or developer tools space.
+
+---
+
+**⭐ Star this repo if Natively helps you succeed in meetings, interviews, or presentations!**
+
+### 🏷️ Tags
+`ai-assistant` `meeting-notes` `interview-helper` `presentation-support` `ollama` `gemini-ai` `electron-app` `cross-platform` `privacy-focused` `open-source` `local-ai` `screenshot-analysis` `academic-helper` `sales-assistant` `coding-companion`
