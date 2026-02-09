@@ -33,6 +33,18 @@ This demo shows **a complete live meeting scenario**:
 
 ---
 
+## Quick Start (End Users)
+
+Download the latest prebuilt version from **[Releases](https://github.com/evinjohnn/natively-cluely-ai-assistant/releases)**.
+
+### [Windows (v1.1.2)](https://github.com/evinjohnn/natively-cluely-ai-assistant/releases/tag/v1.1.2)
+### [macOS (v1.1.1)](https://github.com/evinjohnn/natively-cluely-ai-assistant/releases/tag/v1.1.1)
+
+No build steps required.
+
+---
+
+
 ## Table of Contents
 
 - [What Is Natively?](#what-is-natively)
@@ -101,19 +113,6 @@ You explicitly control:
 - What runs locally
 - What uses cloud AI
 - Which providers are enabled
-
----
-
-
-
-## Quick Start (End Users)
-
-Download the latest prebuilt version from **[Releases](https://github.com/evinjohnn/natively-cluely-ai-assistant/releases)**.
-
-### [Windows (v1.1.2)](https://github.com/evinjohnn/natively-cluely-ai-assistant/releases/tag/v1.1.2)
-### [macOS (v1.1.1)](https://github.com/evinjohnn/natively-cluely-ai-assistant/releases/tag/v1.1.1)
-
-No build steps required.
 
 ---
 
