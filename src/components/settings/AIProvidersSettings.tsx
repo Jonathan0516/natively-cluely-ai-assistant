@@ -174,7 +174,7 @@ export const AIProvidersSettings: React.FC = () => {
         }
     };
 
-    const checkOllama = async (isInitial = true) => {
+    const checkOllama = async (_isInitial = true) => {
         // Don't override 'checking' if we are already in smart-start mode
         // if (isInitial) setOllamaStatus('checking'); 
 

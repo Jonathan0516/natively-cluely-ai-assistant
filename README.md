@@ -42,7 +42,7 @@ This demo shows **a complete live meeting scenario**:
 
 Download the latest prebuilt version from **[Releases](https://github.com/evinjohnn/natively-cluely-ai-assistant/releases)**.
 
-### [Windows (v1.1.6)](https://github.com/evinjohnn/natively-cluely-ai-assistant/releases/tag/v1.1.6)
+### [Windows (v1.1.2)](https://github.com/evinjohnn/natively-cluely-ai-assistant/releases/tag/v1.1.2)
 ### [macOS (v1.1.6)](https://github.com/evinjohnn/natively-cluely-ai-assistant/releases/tag/v1.1.6)
 
 No build steps required.
@@ -224,9 +224,9 @@ npm run dist
 ### AI Providers
 - **Custom (BYO Endpoint):** Paste any cURL command to use OpenRouter, DeepSeek, or private endpoints.
 - **Ollama (Local):** Zero-setup detection of local models (Llama 3, Mistral, Gemma).
-- **Google Gemini:** First-class support for Gemini 1.5 Pro/Flash.
-- **OpenAI:** GPT-4o support with optimized system prompts.
-- **Anthropic:** Claude 3.5 Sonnet support for complex reasoning.
+- **Google Gemini:** First-class support for Gemini 3.0 Pro/Flash.
+- **OpenAI:** GPT-5.2 support with optimized system prompts.
+- **Anthropic:** Claude 4.5 Sonnet support for complex reasoning.
 - **Groq:** Ultra-fast inference with Llama 3 models.
 
 ---
