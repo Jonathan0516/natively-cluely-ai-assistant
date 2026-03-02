@@ -14,6 +14,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useShortcuts } from '../hooks/useShortcuts';
 import { KeyRecorder } from './ui/KeyRecorder';
 import { ProfileVisualizer } from './profile/ProfileVisualizer';
+import { PremiumUpgradeModal } from './premium/PremiumUpgradeModal';
 
 interface CustomSelectProps {
     label: string;
@@ -246,6 +247,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
     const [profileUploading, setProfileUploading] = useState(false);
     const [profileError, setProfileError] = useState('');
     const [profileData, setProfileData] = useState<any>(null);
+    const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false);
     const [jdUploading, setJdUploading] = useState(false);
     const [jdError, setJdError] = useState('');
     const [companyResearching, setCompanyResearching] = useState(false);
@@ -1300,11 +1302,19 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                             {activeTab === 'profile' && (
                                 <div className="space-y-6 animated fadeIn">
                                     {/* Introduction */}
-                                    {/* Introduction */}
                                     <div className="mb-5">
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <h3 className="text-sm font-bold text-text-primary">Professional Identity</h3>
-                                            <span className="bg-yellow-500/10 text-yellow-500 text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide">BETA</span>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <div className="flex items-center gap-2">
+                                                <h3 className="text-sm font-bold text-text-primary">Professional Identity</h3>
+                                                <span className="bg-yellow-500/10 text-yellow-500 text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide">BETA</span>
+                                            </div>
+                                            <button
+                                                onClick={() => setIsPremiumModalOpen(true)}
+                                                className="text-[11px] font-semibold text-black hover:bg-[#FDE047] active:scale-[0.98] border border-transparent bg-[#FACC15] px-2.5 py-1 rounded-full flex items-center gap-1.5 transition-all duration-200 shadow-[0_0_10px_rgba(250,204,21,0.2)] hover:shadow-[0_0_15px_rgba(250,204,21,0.3)]"
+                                            >
+                                                <Sparkles size={12} className="text-black/80" />
+                                                Unlock Pro
+                                            </button>
                                         </div>
                                         <p className="text-xs text-text-secondary mb-2">
                                             This engine constructs an intelligent representation of your career history.
@@ -1652,7 +1662,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                                                     </button>
                                                 </div>
 
-                                                <div className="mt-3 flex items-start gap-2 px-3 py-2.5 bg-bg-input/50 rounded-lg border border-border-subtle/50">
+                                                <div className="mt-3 flex items-start gap-2 px-3 py-2.5 bg-bg-input/50 rounded-lg">
                                                     <Info size={12} className="text-text-tertiary shrink-0 mt-0.5" />
                                                     <p className="text-[10px] text-text-tertiary leading-relaxed">
                                                         If not provided, LLM general knowledge is used for company research, which may be outdated. Get your API key from the <span className="text-emerald-500/80 hover:text-emerald-400 cursor-pointer underline underline-offset-2" onClick={() => window.electronAPI?.openExternal?.('https://console.cloud.google.com/apis/credentials')}>Google Cloud Console</span> and create a Custom Search Engine at <span className="text-emerald-500/80 hover:text-emerald-400 cursor-pointer underline underline-offset-2" onClick={() => window.electronAPI?.openExternal?.('https://cse.google.com/cse/create/new')}>cse.google.com</span>.
@@ -1708,22 +1718,22 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                                                     <div className="space-y-4 border-t border-border-subtle pt-4 mt-2">
                                                         {companyDossier.hiring_strategy && (
                                                             <div>
-                                                                <div className="text-[10px] font-bold text-text-primary uppercase tracking-wide mb-1 flex items-center gap-1.5"><Sparkles size={12} className="text-purple-400" /> Hiring Strategy</div>
-                                                                <p className="text-xs text-text-secondary leading-relaxed bg-bg-input/50 p-3 rounded-lg border border-border-subtle/50">{companyDossier.hiring_strategy}</p>
+                                                                <div className="text-[10px] font-bold text-text-primary uppercase tracking-wide mb-1">Hiring Strategy</div>
+                                                                <p className="text-xs text-text-secondary leading-relaxed bg-bg-input p-3 rounded-lg">{companyDossier.hiring_strategy}</p>
                                                             </div>
                                                         )}
 
                                                         {companyDossier.interview_focus && (
                                                             <div>
-                                                                <div className="text-[10px] font-bold text-text-primary uppercase tracking-wide mb-1 flex items-center gap-1.5"><MessageSquare size={12} className="text-purple-400" /> Interview Focus</div>
-                                                                <p className="text-xs text-text-secondary leading-relaxed bg-bg-input/50 p-3 rounded-lg border border-border-subtle/50">{companyDossier.interview_focus}</p>
+                                                                <div className="text-[10px] font-bold text-text-primary uppercase tracking-wide mb-1">Interview Focus</div>
+                                                                <p className="text-xs text-text-secondary leading-relaxed bg-bg-input p-3 rounded-lg">{companyDossier.interview_focus}</p>
                                                             </div>
                                                         )}
 
                                                         {companyDossier.salary_estimates?.length > 0 && (
                                                             <div>
                                                                 <div className="text-[10px] font-bold text-text-primary uppercase tracking-wide mb-1">Salary Estimates</div>
-                                                                <div className="space-y-2 bg-bg-input/50 p-3 rounded-lg border border-border-subtle/50">
+                                                                <div className="space-y-2 bg-bg-input p-3 rounded-lg">
                                                                     {companyDossier.salary_estimates.map((s: any, i: number) => (
                                                                         <div key={i} className="flex items-center justify-between pb-2 mb-2 border-b border-border-subtle last:border-0 last:pb-0 last:mb-0">
                                                                             <span className="text-xs text-text-primary font-medium">{s.title} <span className="text-text-tertiary">({s.location})</span></span>
@@ -1746,7 +1756,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                                                                 <div className="text-[10px] font-bold text-text-primary uppercase tracking-wide mb-2">Competitors</div>
                                                                 <div className="flex flex-wrap gap-2">
                                                                     {companyDossier.competitors.map((c: string, i: number) => (
-                                                                        <span key={i} className="text-[11px] text-text-secondary px-2.5 py-1 rounded bg-bg-input border border-border-subtle flex items-center gap-1.5">
+                                                                        <span key={i} className="text-[11px] text-text-secondary px-2.5 py-1 rounded-full bg-bg-input flex items-center gap-1.5">
                                                                             <Building2 size={10} className="text-text-tertiary" /> {c}
                                                                         </span>
                                                                     ))}
@@ -1764,8 +1774,18 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                                             </div>
                                         </div>
                                     )}
-
                                     <ProfileVisualizer profileData={profileData} />
+
+                                    {isPremiumModalOpen && (
+                                        <PremiumUpgradeModal
+                                            isOpen={isPremiumModalOpen}
+                                            onClose={() => setIsPremiumModalOpen(false)}
+                                            onActivated={async () => {
+                                                const status = await window.electronAPI?.profileGetStatus?.();
+                                                if (status) setProfileStatus(status);
+                                            }}
+                                        />
+                                    )}
                                 </div>
                             )}
                             {activeTab === 'ai-providers' && (

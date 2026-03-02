@@ -8,7 +8,7 @@ import * as path from "path";
 import * as fs from "fs";
 import { AudioDevices } from "./audio/AudioDevices";
 
-import { ENGLISH_VARIANTS } from "./config/languages"
+import { RECOGNITION_LANGUAGES, AI_RESPONSE_LANGUAGES } from "./config/languages"
 
 export function initializeIpcHandlers(appState: AppState): void {
   const safeHandle = (channel: string, listener: (event: any, ...args: any[]) => Promise<any> | any) => {
@@ -45,8 +45,47 @@ export function initializeIpcHandlers(appState: AppState): void {
     }
   });
 
+  safeHandle("license:activate", async (event, key: string) => {
+    const { LicenseManager } = require('./services/LicenseManager');
+    return LicenseManager.getInstance().activateLicense(key);
+  });
+  safeHandle("license:check-premium", async () => {
+    const { LicenseManager } = require('./services/LicenseManager');
+    return LicenseManager.getInstance().isPremium();
+  });
+  safeHandle("license:deactivate", async () => {
+    const { LicenseManager } = require('./services/LicenseManager');
+    LicenseManager.getInstance().deactivate();
+    return { success: true };
+  });
+  safeHandle("license:get-hardware-id", async () => {
+    const { LicenseManager } = require('./services/LicenseManager');
+    return LicenseManager.getInstance().getHardwareId();
+  });
+
   safeHandle("get-recognition-languages", async () => {
-    return ENGLISH_VARIANTS;
+    return RECOGNITION_LANGUAGES;
+  });
+
+  safeHandle("get-ai-response-languages", async () => {
+    return AI_RESPONSE_LANGUAGES;
+  });
+
+  safeHandle("set-ai-response-language", async (_, language: string) => {
+    const { CredentialsManager } = require('./services/CredentialsManager');
+    CredentialsManager.getInstance().setAiResponseLanguage(language);
+    appState.processingHelper?.getLLMHelper?.().setAiResponseLanguage?.(language);
+    return { success: true };
+  });
+
+  safeHandle("get-stt-language", async () => {
+    const { CredentialsManager } = require('./services/CredentialsManager');
+    return CredentialsManager.getInstance().getSttLanguage();
+  });
+
+  safeHandle("get-ai-response-language", async () => {
+    const { CredentialsManager } = require('./services/CredentialsManager');
+    return CredentialsManager.getInstance().getAiResponseLanguage();
   });
   safeHandle(
     "update-content-dimensions",
@@ -1659,5 +1698,219 @@ export function initializeIpcHandlers(appState: AppState): void {
     if (!ragManager) return { success: false };
     await ragManager.retryPendingEmbeddings();
     return { success: true };
+  });
+
+  // ==========================================
+  // Profile Engine IPC Handlers
+  // ==========================================
+
+  safeHandle("profile:upload-resume", async (_, filePath: string) => {
+    try {
+      console.log(`[IPC] profile:upload-resume called with: ${filePath}`);
+      const orchestrator = appState.getKnowledgeOrchestrator();
+      if (!orchestrator) {
+        return { success: false, error: 'Knowledge engine not initialized. Please ensure API keys are configured.' };
+      }
+      const { DocType } = require('./knowledge/types');
+      const result = await orchestrator.ingestDocument(filePath, DocType.RESUME);
+      return result;
+    } catch (error: any) {
+      console.error('[IPC] profile:upload-resume error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  safeHandle("profile:get-status", async () => {
+    try {
+      const orchestrator = appState.getKnowledgeOrchestrator();
+      if (!orchestrator) {
+        return { hasProfile: false, profileMode: false };
+      }
+      // Map new KnowledgeStatus back to legacy UI shape temporarily
+      const status = orchestrator.getStatus();
+      return {
+        hasProfile: status.hasResume,
+        profileMode: status.activeMode,
+        name: status.resumeSummary?.name,
+        role: status.resumeSummary?.role,
+        totalExperienceYears: status.resumeSummary?.totalExperienceYears
+      };
+    } catch (error: any) {
+      return { hasProfile: false, profileMode: false };
+    }
+  });
+
+  safeHandle("profile:set-mode", async (_, enabled: boolean) => {
+    try {
+      const orchestrator = appState.getKnowledgeOrchestrator();
+      if (!orchestrator) {
+        return { success: false, error: 'Knowledge engine not initialized' };
+      }
+      orchestrator.setKnowledgeMode(enabled);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  safeHandle("profile:delete", async () => {
+    try {
+      const orchestrator = appState.getKnowledgeOrchestrator();
+      if (!orchestrator) {
+        return { success: false, error: 'Knowledge engine not initialized' };
+      }
+      const { DocType } = require('./knowledge/types');
+      orchestrator.deleteDocumentsByType(DocType.RESUME);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  safeHandle("profile:get-profile", async () => {
+    try {
+      const orchestrator = appState.getKnowledgeOrchestrator();
+      if (!orchestrator) return null;
+      return orchestrator.getProfileData();
+    } catch (error: any) {
+      return null;
+    }
+  });
+
+  safeHandle("profile:select-file", async () => {
+    try {
+      const result: any = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters: [
+          { name: 'Resume Files', extensions: ['pdf', 'docx', 'txt'] }
+        ]
+      });
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return { cancelled: true };
+      }
+
+      return { success: true, filePath: result.filePaths[0] };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // ==========================================
+  // JD & Research IPC Handlers
+  // ==========================================
+
+  safeHandle("profile:upload-jd", async (_, filePath: string) => {
+    try {
+      console.log(`[IPC] profile:upload-jd called with: ${filePath}`);
+      const orchestrator = appState.getKnowledgeOrchestrator();
+      if (!orchestrator) {
+        return { success: false, error: 'Knowledge engine not initialized. Please ensure API keys are configured.' };
+      }
+      const { DocType } = require('./knowledge/types');
+      const result = await orchestrator.ingestDocument(filePath, DocType.JD);
+      return result;
+    } catch (error: any) {
+      console.error('[IPC] profile:upload-jd error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  safeHandle("profile:delete-jd", async () => {
+    try {
+      const orchestrator = appState.getKnowledgeOrchestrator();
+      if (!orchestrator) {
+        return { success: false, error: 'Knowledge engine not initialized' };
+      }
+      const { DocType } = require('./knowledge/types');
+      orchestrator.deleteDocumentsByType(DocType.JD);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  safeHandle("profile:research-company", async (_, companyName: string) => {
+    try {
+      const orchestrator = appState.getKnowledgeOrchestrator();
+      if (!orchestrator) {
+        return { success: false, error: 'Knowledge engine not initialized' };
+      }
+      const engine = orchestrator.getCompanyResearchEngine();
+
+      // Wire Google Custom Search provider if keys are configured
+      const { CredentialsManager } = require('./services/CredentialsManager');
+      const cm = CredentialsManager.getInstance();
+      const googleSearchKey = cm.getGoogleSearchApiKey();
+      const googleSearchCseId = cm.getGoogleSearchCseId();
+      if (googleSearchKey && googleSearchCseId) {
+        const { GoogleCustomSearchProvider } = require('./knowledge/GoogleCustomSearchProvider');
+        engine.setSearchProvider(new GoogleCustomSearchProvider(googleSearchKey, googleSearchCseId));
+      }
+
+      const dossier = await engine.researchCompany(companyName);
+      return { success: true, dossier };
+    } catch (error: any) {
+      console.error('[IPC] profile:research-company error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  safeHandle("profile:generate-negotiation", async () => {
+    try {
+      const orchestrator = appState.getKnowledgeOrchestrator();
+      if (!orchestrator) {
+        return { success: false, error: 'Knowledge engine not initialized' };
+      }
+      const profileData = orchestrator.getProfileData();
+      if (!profileData) {
+        return { success: false, error: 'No resume uploaded' };
+      }
+
+      // Get the active documents and dossier
+      const status = orchestrator.getStatus();
+      if (!status.hasResume) {
+        return { success: false, error: 'No resume loaded' };
+      }
+
+      // Use the research engine to get cached dossier if a JD is active
+      let dossier = null;
+      if (profileData.activeJD?.company) {
+        const engine = orchestrator.getCompanyResearchEngine();
+        dossier = engine.getCachedDossier(profileData.activeJD.company);
+      }
+
+      const { generateNegotiationScript } = require('./knowledge/NegotiationEngine');
+      // We need access to internal docs - use the orchestrator's methods
+      // For now, return the dossier data so the frontend can display it
+      return { success: true, dossier, profileData };
+    } catch (error: any) {
+      console.error('[IPC] profile:generate-negotiation error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // ==========================================
+  // Google Search API Credentials
+  // ==========================================
+
+  safeHandle("set-google-search-api-key", async (_, apiKey: string) => {
+    try {
+      const { CredentialsManager } = require('./services/CredentialsManager');
+      CredentialsManager.getInstance().setGoogleSearchApiKey(apiKey);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  safeHandle("set-google-search-cse-id", async (_, cseId: string) => {
+    try {
+      const { CredentialsManager } = require('./services/CredentialsManager');
+      CredentialsManager.getInstance().setGoogleSearchCseId(cseId);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
   });
 }
