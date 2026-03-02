@@ -159,6 +159,16 @@ export const AIProvidersSettings: React.FC = () => {
         }
     }, []);
 
+    // Effect to enforce fast mode disabled if no Groq key
+    useEffect(() => {
+        if (!hasStoredKey.groq && fastResponseMode) {
+            setFastResponseMode(false);
+            localStorage.setItem('natively_groq_fast_text', 'false');
+            // @ts-ignore
+            window.electronAPI?.invoke('set-groq-fast-text-mode', false);
+        }
+    }, [hasStoredKey.groq, fastResponseMode]);
+
     // Poll for Ollama status every 3 seconds requesting smart start on mount
     useEffect(() => {
         // Immediate "Smart Start" check
@@ -421,23 +431,33 @@ export const AIProvidersSettings: React.FC = () => {
                 </div>
 
                 {/* Fast Response Mode */}
-                <div className="bg-bg-item-surface rounded-xl p-5 border border-border-subtle flex items-center justify-between">
+                <div
+                    className={`bg-bg-item-surface rounded-xl p-5 border border-border-subtle flex items-center justify-between ${!hasStoredKey.groq ? 'opacity-50 grayscale' : ''}`}
+                    title={!hasStoredKey.groq ? "Requires Groq API Key to be configured" : ""}
+                >
                     <div>
                         <div className="flex items-center gap-2">
                             <label className="block text-xs font-medium text-text-primary uppercase tracking-wide mb-0">Fast Response Mode</label>
                             <span className="bg-orange-500/10 text-orange-500 text-[9px] font-bold px-1.5 py-0.5 rounded border border-orange-500/20">NEW</span>
                         </div>
                         <p className="text-[10px] text-text-secondary mt-0.5">Super fast responses using Groq Llama 3 for text. Multimodal requests still use your Default Model.</p>
+                        {!hasStoredKey.groq && (
+                            <p className="text-[10px] text-orange-500 mt-0.5 font-medium">Requires a Groq API Key to be configured below.</p>
+                        )}
                     </div>
                     <div
                         onClick={async () => {
+                            if (!hasStoredKey.groq) {
+                                alert("Please configure a Groq API Key first to enable Fast Response Mode.");
+                                return;
+                            }
                             const newState = !fastResponseMode;
                             setFastResponseMode(newState);
                             localStorage.setItem('natively_groq_fast_text', String(newState));
                             // @ts-ignore
                             await window.electronAPI?.invoke('set-groq-fast-text-mode', newState);
                         }}
-                        className={`w-10 h-6 rounded-full p-1 cursor-pointer transition-colors ${fastResponseMode ? 'bg-orange-500' : 'bg-bg-input border border-border-subtle'}`}
+                        className={`w-10 h-6 rounded-full p-1 transition-colors ${!hasStoredKey.groq ? 'cursor-not-allowed bg-bg-input border border-border-subtle' : fastResponseMode ? 'bg-orange-500 cursor-pointer' : 'bg-bg-input border border-border-subtle cursor-pointer'}`}
                     >
                         <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${fastResponseMode ? 'translate-x-4' : 'translate-x-0'}`} />
                     </div>

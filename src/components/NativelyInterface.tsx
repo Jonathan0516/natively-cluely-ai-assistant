@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { dracula } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 // import { ModelSelector } from './ui/ModelSelector'; // REMOVED
 import TopPill from './ui/TopPill';
 import RollingTranscript from './ui/RollingTranscript';
@@ -981,35 +981,33 @@ Provide only the answer, nothing else.`;
                                     const lang = match[1] || 'python';
                                     const code = match[2].trim();
                                     return (
-                                        <div key={i} className="my-3 rounded-lg overflow-hidden border border-white/10 shadow-sm bg-[#0f172a]">
-                                            {/* IDE-style Header */}
-                                            <div className="bg-[#1e293b] px-3 py-1.5 flex items-center justify-between border-b border-white/5">
-                                                <div className="flex items-center gap-2 text-[10px] uppercase font-bold text-slate-400 font-mono">
-                                                    <div className="w-2 h-2 rounded-full bg-purple-500/80" />
+                                        <div key={i} className="my-3 rounded-xl overflow-hidden border border-white/[0.08] shadow-lg bg-zinc-800/60 backdrop-blur-md">
+                                            {/* Minimalist Apple Header */}
+                                            <div className="bg-white/[0.04] px-3 py-1.5 border-b border-white/[0.08]">
+                                                <span className="text-[10px] uppercase tracking-widest font-semibold text-white/40 font-mono">
                                                     {lang || 'CODE'}
-                                                </div>
-                                                <div className="flex gap-1.5">
-                                                    <div className="w-2 h-2 rounded-full bg-white/10" />
-                                                    <div className="w-2 h-2 rounded-full bg-white/10" />
-                                                </div>
+                                                </span>
                                             </div>
-                                            <SyntaxHighlighter
-                                                language={lang}
-                                                style={dracula}
-                                                customStyle={{
-                                                    margin: 0,
-                                                    borderRadius: 0,
-                                                    fontSize: '12px',
-                                                    background: 'transparent',
-                                                    padding: '12px',
-                                                    fontFamily: 'JetBrains Mono, Menlo, monospace'
-                                                }}
-                                                wrapLongLines={true}
-                                                showLineNumbers={true}
-                                                lineNumberStyle={{ minWidth: '2em', paddingRight: '1em', color: '#475569', textAlign: 'right' }}
-                                            >
-                                                {code}
-                                            </SyntaxHighlighter>
+                                            <div className="bg-transparent">
+                                                <SyntaxHighlighter
+                                                    language={lang}
+                                                    style={vscDarkPlus}
+                                                    customStyle={{
+                                                        margin: 0,
+                                                        borderRadius: 0,
+                                                        fontSize: '13px',
+                                                        lineHeight: '1.6',
+                                                        background: 'transparent',
+                                                        padding: '16px',
+                                                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
+                                                    }}
+                                                    wrapLongLines={true}
+                                                    showLineNumbers={true}
+                                                    lineNumberStyle={{ minWidth: '2.5em', paddingRight: '1.2em', color: 'rgba(255,255,255,0.2)', textAlign: 'right', fontSize: '11px' }}
+                                                >
+                                                    {code}
+                                                </SyntaxHighlighter>
+                                            </div>
                                         </div>
                                     );
                                 }
@@ -1021,7 +1019,7 @@ Provide only the answer, nothing else.`;
                                         remarkPlugins={[remarkGfm, remarkMath]}
                                         rehypePlugins={[rehypeKatex]}
                                         components={{
-                                            p: ({ node, ...props }: any) => <p className="mb-2 last:mb-0" {...props} />,
+                                            p: ({ node, ...props }: any) => <p className="mb-2 last:mb-0 whitespace-pre-wrap" {...props} />,
                                             strong: ({ node, ...props }: any) => <strong className="font-bold text-white" {...props} />,
                                             em: ({ node, ...props }: any) => <em className="italic text-slate-300" {...props} />,
                                             ul: ({ node, ...props }: any) => <ul className="list-disc ml-4 mb-2 space-y-1" {...props} />,
@@ -1030,7 +1028,7 @@ Provide only the answer, nothing else.`;
                                             h1: ({ node, ...props }: any) => <h1 className="text-lg font-bold text-white mb-2 mt-3" {...props} />,
                                             h2: ({ node, ...props }: any) => <h2 className="text-base font-bold text-white mb-2 mt-3" {...props} />,
                                             h3: ({ node, ...props }: any) => <h3 className="text-sm font-bold text-white mb-1 mt-2" {...props} />,
-                                            code: ({ node, ...props }: any) => <code className="bg-slate-700/50 rounded px-1 py-0.5 text-xs font-mono text-purple-200" {...props} />,
+                                            code: ({ node, ...props }: any) => <code className="bg-slate-700/50 rounded px-1 py-0.5 text-xs font-mono text-purple-200 whitespace-pre-wrap" {...props} />,
                                             blockquote: ({ node, ...props }: any) => <blockquote className="border-l-2 border-purple-500/50 pl-3 italic text-slate-400 my-2" {...props} />,
                                             a: ({ node, ...props }: any) => <a className="text-blue-400 hover:text-blue-300 hover:underline" target="_blank" rel="noopener noreferrer" {...props} />,
                                         }}
@@ -1137,36 +1135,34 @@ Provide only the answer, nothing else.`;
                                     }
 
                                     return (
-                                        <div key={i} className="my-3 rounded-lg overflow-hidden border border-white/10 shadow-sm bg-[#0f172a]">
-                                            {/* IDE-style Header */}
-                                            <div className="bg-[#1e293b] px-3 py-1.5 flex items-center justify-between border-b border-white/5">
-                                                <div className="flex items-center gap-2 text-[10px] uppercase font-bold text-slate-400 font-mono">
-                                                    <div className="w-2 h-2 rounded-full bg-emerald-500/80" />
+                                        <div key={i} className="my-3 rounded-xl overflow-hidden border border-white/[0.08] shadow-lg bg-zinc-800/60 backdrop-blur-md">
+                                            {/* Minimalist Apple Header */}
+                                            <div className="bg-white/[0.04] px-3 py-1.5 border-b border-white/[0.08]">
+                                                <span className="text-[10px] uppercase tracking-widest font-semibold text-white/40 font-mono">
                                                     {lang || 'CODE'}
-                                                </div>
-                                                <div className="flex gap-1.5">
-                                                    <div className="w-2 h-2 rounded-full bg-white/10" />
-                                                    <div className="w-2 h-2 rounded-full bg-white/10" />
-                                                </div>
+                                                </span>
                                             </div>
 
-                                            <SyntaxHighlighter
-                                                language={lang}
-                                                style={dracula}
-                                                customStyle={{
-                                                    margin: 0,
-                                                    borderRadius: 0,
-                                                    fontSize: '12px',
-                                                    background: 'transparent',
-                                                    padding: '12px',
-                                                    fontFamily: 'JetBrains Mono, Menlo, monospace'
-                                                }}
-                                                wrapLongLines={true}
-                                                showLineNumbers={true}
-                                                lineNumberStyle={{ minWidth: '2em', paddingRight: '1em', color: '#475569', textAlign: 'right' }}
-                                            >
-                                                {code}
-                                            </SyntaxHighlighter>
+                                            <div className="bg-transparent">
+                                                <SyntaxHighlighter
+                                                    language={lang}
+                                                    style={vscDarkPlus}
+                                                    customStyle={{
+                                                        margin: 0,
+                                                        borderRadius: 0,
+                                                        fontSize: '13px',
+                                                        lineHeight: '1.6',
+                                                        background: 'transparent',
+                                                        padding: '16px',
+                                                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
+                                                    }}
+                                                    wrapLongLines={true}
+                                                    showLineNumbers={true}
+                                                    lineNumberStyle={{ minWidth: '2.5em', paddingRight: '1.2em', color: 'rgba(255,255,255,0.2)', textAlign: 'right', fontSize: '11px' }}
+                                                >
+                                                    {code}
+                                                </SyntaxHighlighter>
+                                            </div>
                                         </div>
                                     );
                                 }

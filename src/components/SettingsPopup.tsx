@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
-import { MessageSquare, Link, Camera, Zap, Heart } from 'lucide-react';
+import { MessageSquare, Link, Camera, Zap, Heart, User } from 'lucide-react';
 import { useShortcuts } from '../hooks/useShortcuts';
 
 const SettingsPopup = () => {
@@ -8,9 +8,53 @@ const SettingsPopup = () => {
     const [useGroqFastText, setUseGroqFastText] = useState(() => {
         return localStorage.getItem('natively_groq_fast_text') === 'true';
     });
+    const [profileMode, setProfileMode] = useState(false);
+    const [hasProfile, setHasProfile] = useState(false);
 
     const isFirstRender = React.useRef(true);
     const isFirstUndetectableRender = React.useRef(true);
+
+    const [hasStoredKey, setHasStoredKey] = useState<Record<string, boolean>>({});
+
+    // Load credentials func
+    const loadCredentials = async () => {
+        try {
+            // @ts-ignore
+            const creds = await window.electronAPI?.getStoredCredentials?.();
+            if (creds) {
+                setHasStoredKey({
+                    gemini: creds.hasGeminiKey,
+                    groq: creds.hasGroqKey,
+                    openai: creds.hasOpenaiKey,
+                    claude: creds.hasClaudeKey
+                });
+            }
+        } catch (e) {
+            console.error("Failed to load settings:", e);
+        }
+    };
+
+    // Load Initial Data and refresh on focus
+    useEffect(() => {
+        loadCredentials();
+        const handleFocus = () => loadCredentials();
+        window.addEventListener('focus', handleFocus);
+
+        // Load profile status
+        const loadProfile = async () => {
+            try {
+                // @ts-ignore
+                const status = await window.electronAPI?.profileGetStatus?.();
+                if (status) {
+                    setHasProfile(status.hasProfile);
+                    setProfileMode(status.profileMode);
+                }
+            } catch (e) { /* ignore */ }
+        };
+        loadProfile();
+
+        return () => window.removeEventListener('focus', handleFocus);
+    }, []);
 
     // Sync with global state changes
     useEffect(() => {
@@ -141,7 +185,7 @@ const SettingsPopup = () => {
 
 
                 {/* Groq (Fast Text) Toggle */}
-                <div className="flex items-center justify-between px-3 py-2 hover:bg-white/5 rounded-lg transition-colors duration-200 group cursor-default">
+                <div className={`flex items-center justify-between px-3 py-2 rounded-lg transition-colors duration-200 group ${hasStoredKey.groq === false ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:bg-white/5 cursor-default'}`} title={hasStoredKey.groq === false ? "Requires Groq API Key to be configured in Settings" : ""}>
                     <div className="flex items-center gap-3">
                         <Zap
                             className={`w-4 h-4 transition-colors ${useGroqFastText ? 'text-orange-500' : 'text-slate-500 group-hover:text-slate-300'}`}
@@ -150,8 +194,12 @@ const SettingsPopup = () => {
                         <span className={`text-[12px] font-medium transition-colors ${useGroqFastText ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'}`}>Fast Response</span>
                     </div>
                     <button
-                        onClick={() => setUseGroqFastText(!useGroqFastText)}
+                        onClick={() => {
+                            if (hasStoredKey.groq === false) return; // Prevent clicking
+                            setUseGroqFastText(!useGroqFastText);
+                        }}
                         className={`w-[30px] h-[18px] rounded-full p-[1.5px] transition-all duration-300 ease-spring active:scale-[0.92] ${useGroqFastText ? 'bg-orange-500 shadow-[0_2px_10px_rgba(249,115,22,0.3)]' : 'bg-white/10'}`}
+                        disabled={hasStoredKey.groq === false}
                     >
                         <div className={`w-[15px] h-[15px] rounded-full bg-black shadow-sm transition-transform duration-300 ease-spring ${useGroqFastText ? 'translate-x-[12px]' : 'translate-x-0'}`} />
                     </button>
@@ -179,6 +227,32 @@ const SettingsPopup = () => {
                         <div className={`w-[15px] h-[15px] rounded-full bg-black shadow-sm transition-transform duration-300 ease-spring ${showTranscript ? 'translate-x-[12px]' : 'translate-x-0'}`} />
                     </button>
                 </div>
+
+                {/* Profile Mode Toggle */}
+                {hasProfile && (
+                    <div className="flex items-center justify-between px-3 py-2 hover:bg-white/5 rounded-lg transition-colors duration-200 group cursor-default">
+                        <div className="flex items-center gap-3">
+                            <User
+                                className={`w-3.5 h-3.5 transition-colors ${profileMode ? 'text-accent-primary' : 'text-slate-500 group-hover:text-slate-300'}`}
+                                fill={profileMode ? "currentColor" : "none"}
+                            />
+                            <span className={`text-[12px] font-medium transition-colors ${profileMode ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'}`}>Profile Mode</span>
+                        </div>
+                        <button
+                            onClick={async () => {
+                                const newState = !profileMode;
+                                setProfileMode(newState);
+                                try {
+                                    // @ts-ignore
+                                    await window.electronAPI?.profileSetMode?.(newState);
+                                } catch (e) { console.error(e); }
+                            }}
+                            className={`w-[30px] h-[18px] rounded-full p-[1.5px] transition-all duration-300 ease-spring active:scale-[0.92] ${profileMode ? 'bg-accent-primary shadow-[0_2px_10px_rgba(var(--color-accent-primary),0.3)]' : 'bg-white/10'}`}
+                        >
+                            <div className={`w-[15px] h-[15px] rounded-full bg-black shadow-sm transition-transform duration-300 ease-spring ${profileMode ? 'translate-x-[12px]' : 'translate-x-0'}`} />
+                        </button>
+                    </div>
+                )}
 
                 <div className="h-px bg-white/[0.04] my-0.5 mx-2" />
 

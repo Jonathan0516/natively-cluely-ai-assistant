@@ -12,11 +12,11 @@ export interface KeybindConfig {
 
 export const DEFAULT_KEYBINDS: KeybindConfig[] = [
     // General
-    { id: 'general:toggle-visibility', label: 'Toggle Visibility', accelerator: 'CommandOrControl+B', isGlobal: false, defaultAccelerator: 'CommandOrControl+B' },
+    { id: 'general:toggle-visibility', label: 'Toggle Visibility', accelerator: 'CommandOrControl+B', isGlobal: true, defaultAccelerator: 'CommandOrControl+B' },
     { id: 'general:process-screenshots', label: 'Process Screenshots', accelerator: 'CommandOrControl+Enter', isGlobal: false, defaultAccelerator: 'CommandOrControl+Enter' },
     { id: 'general:reset-cancel', label: 'Reset / Cancel', accelerator: 'CommandOrControl+R', isGlobal: false, defaultAccelerator: 'CommandOrControl+R' },
-    { id: 'general:take-screenshot', label: 'Take Screenshot', accelerator: 'CommandOrControl+H', isGlobal: false, defaultAccelerator: 'CommandOrControl+H' },
-    { id: 'general:selective-screenshot', label: 'Selective Screenshot', accelerator: 'CommandOrControl+Shift+H', isGlobal: false, defaultAccelerator: 'CommandOrControl+Shift+H' },
+    { id: 'general:take-screenshot', label: 'Take Screenshot', accelerator: 'CommandOrControl+H', isGlobal: true, defaultAccelerator: 'CommandOrControl+H' },
+    { id: 'general:selective-screenshot', label: 'Selective Screenshot', accelerator: 'CommandOrControl+Shift+H', isGlobal: true, defaultAccelerator: 'CommandOrControl+Shift+H' },
 
     // Chat - Window Local (Handled via Menu or Renderer logic, but centralized here)
     { id: 'chat:whatToAnswer', label: 'What to Answer', accelerator: 'CommandOrControl+1', isGlobal: false, defaultAccelerator: 'CommandOrControl+1' },
@@ -40,6 +40,7 @@ export class KeybindManager {
     private filePath: string;
     private windowHelper: any; // Type avoided for circular dep, passed in init
     private onUpdateCallbacks: (() => void)[] = [];
+    private onShortcutTriggeredCallbacks: ((actionId: string) => void)[] = [];
 
     private constructor() {
         this.filePath = path.join(app.getPath('userData'), 'keybinds.json');
@@ -48,6 +49,10 @@ export class KeybindManager {
 
     public onUpdate(callback: () => void) {
         this.onUpdateCallbacks.push(callback);
+    }
+
+    public onShortcutTriggered(callback: (actionId: string) => void) {
+        this.onShortcutTriggeredCallbacks.push(callback);
     }
 
     public static getInstance(): KeybindManager {
@@ -128,8 +133,18 @@ export class KeybindManager {
     public registerGlobalShortcuts() {
         globalShortcut.unregisterAll();
 
-        // Register any other global shortcuts if they exist in the future
-        // Currently, we have removed the only global shortcut (toggle-app)
+        // Register global shortcuts
+        this.keybinds.forEach(kb => {
+            if (kb.isGlobal && kb.accelerator && kb.accelerator.trim() !== '') {
+                try {
+                    globalShortcut.register(kb.accelerator, () => {
+                        this.onShortcutTriggeredCallbacks.forEach(cb => cb(kb.id));
+                    });
+                } catch (e) {
+                    console.error(`[KeybindManager] Failed to register global shortcut ${kb.accelerator}:`, e);
+                }
+            }
+        });
 
         this.updateMenu();
     }

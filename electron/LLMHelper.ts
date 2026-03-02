@@ -12,6 +12,7 @@ import {
   CUSTOM_RECAP_PROMPT, CUSTOM_FOLLOWUP_PROMPT, CUSTOM_FOLLOW_UP_QUESTIONS_PROMPT, CUSTOM_ASSIST_PROMPT
 } from "./llm/prompts"
 import { deepVariableReplacer, getByPath } from './utils/curlUtils';
+import { KnowledgeOrchestrator } from './knowledge/KnowledgeOrchestrator';
 import curl2Json from "@bany/curl-to-json";
 import { CustomProvider, CurlProvider } from './services/CredentialsManager';
 import { exec } from 'child_process';
@@ -52,6 +53,9 @@ export class LLMHelper {
   private customProvider: CustomProvider | null = null;
   private activeCurlProvider: CurlProvider | null = null;
   private groqFastTextMode: boolean = false;
+  private knowledgeOrchestrator: KnowledgeOrchestrator | null = null;
+  private aiResponseLanguage: string = 'English';
+  private sttLanguage: string = 'english-us';
 
   // Rate limiters per provider to prevent 429 errors on free tiers
   private rateLimiters: ReturnType<typeof createProviderRateLimiters>;
@@ -665,9 +669,68 @@ ANSWER DIRECTLY:`;
     }
   }
 
+  /**
+   * Set the KnowledgeOrchestrator for knowledge mode integration.
+   */
+  public setKnowledgeOrchestrator(orchestrator: KnowledgeOrchestrator): void {
+    this.knowledgeOrchestrator = orchestrator;
+    console.log('[LLMHelper] KnowledgeOrchestrator attached');
+  }
+
+  public getKnowledgeOrchestrator(): KnowledgeOrchestrator | null {
+    return this.knowledgeOrchestrator;
+  }
+
+  public setAiResponseLanguage(language: string) {
+    this.aiResponseLanguage = language;
+    console.log(`[LLMHelper] AI Response Language set to: ${language}`);
+  }
+
+  public setSttLanguage(language: string) {
+    this.sttLanguage = language;
+    console.log(`[LLMHelper] STT Language set to: ${language}`);
+  }
+
+  /**
+   * Helper to inject language instruction into system prompt
+   */
+  private injectLanguageInstruction(systemPrompt: string): string {
+    return `${systemPrompt}\n\nCRITICAL: You MUST respond ONLY in ${this.aiResponseLanguage}. This is an absolute requirement. All generated text that the user should say must be in ${this.aiResponseLanguage}.`;
+  }
+
   public async chatWithGemini(message: string, imagePath?: string, context?: string, skipSystemPrompt: boolean = false, alternateGroqMessage?: string): Promise<string> {
     try {
       console.log(`[LLMHelper] chatWithGemini called with message:`, message.substring(0, 50))
+
+      // ============================================================
+      // KNOWLEDGE MODE INTERCEPT
+      // If knowledge mode is active, check for intro questions and
+      // inject system prompt + relevant context
+      // ============================================================
+      if (this.knowledgeOrchestrator?.isKnowledgeMode()) {
+        try {
+          const knowledgeResult = await this.knowledgeOrchestrator.processQuestion(message);
+          if (knowledgeResult) {
+            // Intro question shortcut — return generated response directly
+            if (knowledgeResult.isIntroQuestion && knowledgeResult.introResponse) {
+              console.log('[LLMHelper] Knowledge mode: returning generated intro response');
+              return knowledgeResult.introResponse;
+            }
+            // Inject knowledge system prompt and context
+            if (!skipSystemPrompt && knowledgeResult.systemPromptInjection) {
+              skipSystemPrompt = false; // ensure we use the knowledge prompt
+              // Prepend knowledge context to existing context
+              if (knowledgeResult.contextBlock) {
+                context = context
+                  ? `${knowledgeResult.contextBlock}\n\n${context}`
+                  : knowledgeResult.contextBlock;
+              }
+            }
+          }
+        } catch (knowledgeError: any) {
+          console.warn('[LLMHelper] Knowledge mode processing failed, falling back to normal:', knowledgeError.message);
+        }
+      }
 
       const isMultimodal = !!imagePath;
 
@@ -688,9 +751,15 @@ ANSWER DIRECTLY:`;
         ? `CONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`
         : message;
 
+      const baseGeminiPrompt = skipSystemPrompt ? HARD_SYSTEM_PROMPT : HARD_SYSTEM_PROMPT;
+      const baseGroqPrompt = skipSystemPrompt ? GROQ_SYSTEM_PROMPT : GROQ_SYSTEM_PROMPT;
+      
+      const finalGeminiPrompt = skipSystemPrompt ? HARD_SYSTEM_PROMPT : this.injectLanguageInstruction(HARD_SYSTEM_PROMPT);
+      const finalGroqPrompt = alternateGroqMessage || (skipSystemPrompt ? GROQ_SYSTEM_PROMPT : this.injectLanguageInstruction(GROQ_SYSTEM_PROMPT));
+
       const combinedMessages = {
-        gemini: buildMessage(HARD_SYSTEM_PROMPT),
-        groq: alternateGroqMessage || buildMessage(GROQ_SYSTEM_PROMPT),
+        gemini: context ? `${finalGeminiPrompt}\n\nCONTEXT:\n${context}\n\nUSER QUESTION:\n${message}` : `${finalGeminiPrompt}\n\n${message}`,
+        groq: finalGroqPrompt,
       };
 
       // GROQ FAST TEXT OVERRIDE (Text-Only)
@@ -705,8 +774,8 @@ ANSWER DIRECTLY:`;
       }
 
       // System prompts for OpenAI/Claude (skipped if skipSystemPrompt)
-      const openaiSystemPrompt = skipSystemPrompt ? undefined : OPENAI_SYSTEM_PROMPT;
-      const claudeSystemPrompt = skipSystemPrompt ? undefined : CLAUDE_SYSTEM_PROMPT;
+      const openaiSystemPrompt = skipSystemPrompt ? undefined : this.injectLanguageInstruction(OPENAI_SYSTEM_PROMPT);
+      const claudeSystemPrompt = skipSystemPrompt ? undefined : this.injectLanguageInstruction(CLAUDE_SYSTEM_PROMPT);
 
       if (this.useOllama) {
         return await this.callOllama(combinedMessages.gemini);
@@ -870,7 +939,7 @@ ANSWER DIRECTLY:`;
       model: GROQ_MODEL,
       messages: [{ role: "user", content: fullMessage }],
       temperature: 0.4,
-      max_tokens: 8192,
+      max_tokens: 32768,
       stream: false
     });
 
@@ -907,8 +976,7 @@ ANSWER DIRECTLY:`;
     const response = await this.openaiClient.chat.completions.create({
       model: OPENAI_MODEL,
       messages,
-      temperature: 0.4,
-      max_tokens: 8192,
+      max_completion_tokens: MAX_OUTPUT_TOKENS,
     });
 
     return response.choices[0]?.message?.content || "";
@@ -987,7 +1055,7 @@ ANSWER DIRECTLY:`;
 
     const response = await this.claudeClient.messages.create({
       model: CLAUDE_MODEL,
-      max_tokens: 8192,
+      max_tokens: MAX_OUTPUT_TOKENS,
       ...(systemPrompt ? { system: systemPrompt } : {}),
       messages: [{ role: "user", content }],
     });
@@ -1168,14 +1236,15 @@ ANSWER DIRECTLY:`;
 
     // Build single-string messages for Groq/Gemini (which use combined prompts)
     const buildCombinedMessage = (systemPrompt: string) => {
+      const finalPrompt = skipSystemPrompt ? systemPrompt : this.injectLanguageInstruction(systemPrompt);
       if (skipSystemPrompt) {
         return context
           ? `CONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`
           : message;
       }
       return context
-        ? `${systemPrompt}\n\nCONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`
-        : `${systemPrompt}\n\n${message}`;
+        ? `${finalPrompt}\n\nCONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`
+        : `${finalPrompt}\n\n${message}`;
     };
 
     // For OpenAI/Claude: separate system prompt + user message (proper API pattern)
@@ -1204,14 +1273,14 @@ ANSWER DIRECTLY:`;
     const providers: ProviderAttempt[] = [];
 
     // System prompts for OpenAI/Claude (skipped if skipSystemPrompt)
-    const openaiSystemPrompt = skipSystemPrompt ? undefined : OPENAI_SYSTEM_PROMPT;
-    const claudeSystemPrompt = skipSystemPrompt ? undefined : CLAUDE_SYSTEM_PROMPT;
+    const openaiSystemPrompt = skipSystemPrompt ? undefined : this.injectLanguageInstruction(OPENAI_SYSTEM_PROMPT);
+    const claudeSystemPrompt = skipSystemPrompt ? undefined : this.injectLanguageInstruction(CLAUDE_SYSTEM_PROMPT);
 
     if (isMultimodal) {
       // MULTIMODAL PROVIDER ORDER: Gemini Flash → OpenAI → Claude → Gemini Pro
       // Groq does NOT support vision
       if (this.client) {
-        providers.push({ name: `Gemini Flash (${GEMINI_FLASH_MODEL})`, execute: () => this.streamWithGeminiModel(combinedMessages.gemini, GEMINI_FLASH_MODEL) });
+        providers.push({ name: `Gemini Flash (${GEMINI_FLASH_MODEL})`, execute: () => this.streamWithGeminiModel(combinedMessages.gemini, GEMINI_FLASH_MODEL, imagePath) });
       }
       if (this.openaiClient) {
         providers.push({ name: `OpenAI (${OPENAI_MODEL})`, execute: () => this.streamWithOpenaiMultimodal(userContent, imagePath!, openaiSystemPrompt) });
@@ -1220,7 +1289,7 @@ ANSWER DIRECTLY:`;
         providers.push({ name: `Claude (${CLAUDE_MODEL})`, execute: () => this.streamWithClaudeMultimodal(userContent, imagePath!, claudeSystemPrompt) });
       }
       if (this.client) {
-        providers.push({ name: `Gemini Pro (${GEMINI_PRO_MODEL})`, execute: () => this.streamWithGeminiModel(combinedMessages.gemini, GEMINI_PRO_MODEL) });
+        providers.push({ name: `Gemini Pro (${GEMINI_PRO_MODEL})`, execute: () => this.streamWithGeminiModel(combinedMessages.gemini, GEMINI_PRO_MODEL, imagePath) });
       }
     } else {
       // TEXT-ONLY PROVIDER ORDER: Groq → OpenAI → Claude → Gemini Flash → Gemini Pro
@@ -1286,12 +1355,42 @@ ANSWER DIRECTLY:`;
     systemPromptOverride?: string // Optional override (defaults to HARD_SYSTEM_PROMPT)
   ): AsyncGenerator<string, void, unknown> {
 
+    // ============================================================
+    // KNOWLEDGE MODE INTERCEPT (Streaming)
+    // ============================================================
+    if (this.knowledgeOrchestrator?.isKnowledgeMode()) {
+      try {
+        const knowledgeResult = await this.knowledgeOrchestrator.processQuestion(message);
+        if (knowledgeResult) {
+          // Intro question shortcut — yield generated response directly
+          if (knowledgeResult.isIntroQuestion && knowledgeResult.introResponse) {
+            console.log('[LLMHelper] Knowledge mode (stream): returning generated intro response');
+            yield knowledgeResult.introResponse;
+            return;
+          }
+          // Inject knowledge system prompt
+          if (knowledgeResult.systemPromptInjection) {
+            systemPromptOverride = knowledgeResult.systemPromptInjection;
+          }
+          // Inject knowledge context
+          if (knowledgeResult.contextBlock) {
+            context = context
+              ? `${knowledgeResult.contextBlock}\n\n${context}`
+              : knowledgeResult.contextBlock;
+          }
+        }
+      } catch (knowledgeError: any) {
+        console.warn('[LLMHelper] Knowledge mode (stream) processing failed, falling back:', knowledgeError.message);
+      }
+    }
+
     // Preparation
     const isMultimodal = !!imagePath;
 
     // Determine the system prompt to use
     // logic: if override provided, use it. otherwise use HARD_SYSTEM_PROMPT (which is the universal base)
-    const finalSystemPrompt = systemPromptOverride || HARD_SYSTEM_PROMPT;
+    const baseSystemPrompt = systemPromptOverride || HARD_SYSTEM_PROMPT;
+    const finalSystemPrompt = this.injectLanguageInstruction(baseSystemPrompt);
 
     // Helper to build combined user message
     const userContent = context
@@ -1303,7 +1402,8 @@ ANSWER DIRECTLY:`;
       console.log(`[LLMHelper] ⚡️ Groq Fast Text Mode Active (Streaming). Routing to Groq...`);
       try {
         const groqSystem = systemPromptOverride || GROQ_SYSTEM_PROMPT;
-        const groqFullMessage = `${groqSystem}\n\n${userContent}`;
+        const finalGroqSystem = this.injectLanguageInstruction(groqSystem);
+        const groqFullMessage = `${finalGroqSystem}\n\n${userContent}`;
         yield* this.streamWithGroq(groqFullMessage);
         return;
       } catch (e: any) {
@@ -1330,10 +1430,11 @@ ANSWER DIRECTLY:`;
     // OpenAI
     if (this.currentModelId === OPENAI_MODEL && this.openaiClient) {
       const openAiSystem = systemPromptOverride || OPENAI_SYSTEM_PROMPT;
+      const finalOpenAiSystem = this.injectLanguageInstruction(openAiSystem);
       if (isMultimodal && imagePath) {
-        yield* this.streamWithOpenaiMultimodal(userContent, imagePath, openAiSystem);
+        yield* this.streamWithOpenaiMultimodal(userContent, imagePath, finalOpenAiSystem);
       } else {
-        yield* this.streamWithOpenai(userContent, openAiSystem);
+        yield* this.streamWithOpenai(userContent, finalOpenAiSystem);
       }
       return;
     }
@@ -1341,10 +1442,11 @@ ANSWER DIRECTLY:`;
     // Claude
     if (this.currentModelId === CLAUDE_MODEL && this.claudeClient) {
       const claudeSystem = systemPromptOverride || CLAUDE_SYSTEM_PROMPT;
+      const finalClaudeSystem = this.injectLanguageInstruction(claudeSystem);
       if (isMultimodal && imagePath) {
-        yield* this.streamWithClaudeMultimodal(userContent, imagePath, claudeSystem);
+        yield* this.streamWithClaudeMultimodal(userContent, imagePath, finalClaudeSystem);
       } else {
-        yield* this.streamWithClaude(userContent, claudeSystem);
+        yield* this.streamWithClaude(userContent, finalClaudeSystem);
       }
       return;
     }
@@ -1352,8 +1454,9 @@ ANSWER DIRECTLY:`;
     // Groq (Text Only)
     if (this.currentModelId === GROQ_MODEL && this.groqClient && !isMultimodal) {
       // Build Groq message
-      const groqSystem = systemPromptOverride ? finalSystemPrompt : GROQ_SYSTEM_PROMPT;
-      const groqFullMessage = `${groqSystem}\n\n${userContent}`;
+      const groqSystem = systemPromptOverride ? baseSystemPrompt : GROQ_SYSTEM_PROMPT;
+      const finalGroqSystem = this.injectLanguageInstruction(groqSystem);
+      const groqFullMessage = `${finalGroqSystem}\n\n${userContent}`;
       yield* this.streamWithGroq(groqFullMessage);
       return;
     }
@@ -1363,18 +1466,18 @@ ANSWER DIRECTLY:`;
       // Direct model use if specified
       if (this.currentModelId === GEMINI_PRO_MODEL) {
         const fullMsg = `${finalSystemPrompt}\n\n${userContent}`;
-        yield* this.streamWithGeminiModel(fullMsg, GEMINI_PRO_MODEL);
+        yield* this.streamWithGeminiModel(fullMsg, GEMINI_PRO_MODEL, imagePath);
         return;
       }
       if (this.currentModelId === GEMINI_FLASH_MODEL) {
         const fullMsg = `${finalSystemPrompt}\n\n${userContent}`;
-        yield* this.streamWithGeminiModel(fullMsg, GEMINI_FLASH_MODEL);
+        yield* this.streamWithGeminiModel(fullMsg, GEMINI_FLASH_MODEL, imagePath);
         return;
       }
 
       // Race strategy (default)
       const raceMsg = `${finalSystemPrompt}\n\n${userContent}`;
-      yield* this.streamWithGeminiParallelRace(raceMsg);
+      yield* this.streamWithGeminiParallelRace(raceMsg, imagePath);
     } else {
       throw new Error("No LLM provider available");
     }
@@ -1391,7 +1494,7 @@ ANSWER DIRECTLY:`;
       messages: [{ role: "user", content: fullMessage }],
       stream: true,
       temperature: 0.4,
-      max_tokens: 8192,
+      max_tokens: 32768,
     });
 
     for await (const chunk of stream) {
@@ -1418,8 +1521,7 @@ ANSWER DIRECTLY:`;
       model: OPENAI_MODEL,
       messages,
       stream: true,
-      temperature: 0.4,
-      max_tokens: 8192,
+      max_completion_tokens: MAX_OUTPUT_TOKENS,
     });
 
     for await (const chunk of stream) {
@@ -1438,7 +1540,7 @@ ANSWER DIRECTLY:`;
 
     const stream = await this.claudeClient.messages.stream({
       model: CLAUDE_MODEL,
-      max_tokens: 8192,
+      max_tokens: MAX_OUTPUT_TOKENS,
       ...(systemPrompt ? { system: systemPrompt } : {}),
       messages: [{ role: "user", content: userMessage }],
     });
@@ -1475,8 +1577,7 @@ ANSWER DIRECTLY:`;
       model: OPENAI_MODEL,
       messages,
       stream: true,
-      temperature: 0.4,
-      max_tokens: 8192,
+      max_completion_tokens: MAX_OUTPUT_TOKENS,
     });
 
     for await (const chunk of stream) {
@@ -1498,7 +1599,7 @@ ANSWER DIRECTLY:`;
 
     const stream = await this.claudeClient.messages.stream({
       model: CLAUDE_MODEL,
-      max_tokens: 8192,
+      max_tokens: MAX_OUTPUT_TOKENS,
       ...(systemPrompt ? { system: systemPrompt } : {}),
       messages: [{
         role: "user",
@@ -1526,12 +1627,23 @@ ANSWER DIRECTLY:`;
   /**
    * Stream response from a specific Gemini model
    */
-  private async * streamWithGeminiModel(fullMessage: string, model: string): AsyncGenerator<string, void, unknown> {
+  private async * streamWithGeminiModel(fullMessage: string, model: string, imagePath?: string): AsyncGenerator<string, void, unknown> {
     if (!this.client) throw new Error("Gemini client not initialized");
+
+    const contents: any[] = [{ text: fullMessage }];
+    if (imagePath) {
+      const imageData = await fs.promises.readFile(imagePath);
+      contents.push({
+        inlineData: {
+          mimeType: "image/png",
+          data: imageData.toString("base64")
+        }
+      });
+    }
 
     const streamResult = await this.client.models.generateContentStream({
       model: model,
-      contents: [{ text: fullMessage }],
+      contents: contents,
       config: {
         maxOutputTokens: MAX_OUTPUT_TOKENS,
         temperature: 0.4,
@@ -1559,12 +1671,12 @@ ANSWER DIRECTLY:`;
   /**
    * Race Flash and Pro streams, return whichever succeeds first
    */
-  private async * streamWithGeminiParallelRace(fullMessage: string): AsyncGenerator<string, void, unknown> {
+  private async * streamWithGeminiParallelRace(fullMessage: string, imagePath?: string): AsyncGenerator<string, void, unknown> {
     if (!this.client) throw new Error("Gemini client not initialized");
 
     // Start both streams
-    const flashPromise = this.collectStreamResponse(fullMessage, GEMINI_FLASH_MODEL);
-    const proPromise = this.collectStreamResponse(fullMessage, GEMINI_PRO_MODEL);
+    const flashPromise = this.collectStreamResponse(fullMessage, GEMINI_FLASH_MODEL, imagePath);
+    const proPromise = this.collectStreamResponse(fullMessage, GEMINI_PRO_MODEL, imagePath);
 
     // Race - whoever finishes first wins
     const result = await Promise.any([flashPromise, proPromise]);
@@ -1580,12 +1692,23 @@ ANSWER DIRECTLY:`;
   /**
    * Collect full response from a Gemini model (non-streaming for race)
    */
-  private async collectStreamResponse(fullMessage: string, model: string): Promise<string> {
+  private async collectStreamResponse(fullMessage: string, model: string, imagePath?: string): Promise<string> {
     if (!this.client) throw new Error("Gemini client not initialized");
+
+    const contents: any[] = [{ text: fullMessage }];
+    if (imagePath) {
+      const imageData = await fs.promises.readFile(imagePath);
+      contents.push({
+        inlineData: {
+          mimeType: "image/png",
+          data: imageData.toString("base64")
+        }
+      });
+    }
 
     const response = await this.client.models.generateContent({
       model: model,
-      contents: [{ text: fullMessage }],
+      contents: contents,
       config: {
         maxOutputTokens: MAX_OUTPUT_TOKENS,
         temperature: 0.4,
@@ -2123,7 +2246,7 @@ ANSWER DIRECTLY:`;
               { role: "user", content: `Context:\n${context}` }
             ],
             temperature: 0.3,
-            max_tokens: 8192,
+            max_tokens: 32768,
             stream: false
           }),
           45000,

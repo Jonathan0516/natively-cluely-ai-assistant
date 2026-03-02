@@ -85,11 +85,20 @@ This demo shows **a complete live meeting scenario**:
 > **macOS Users:**
 > 
 > 1.  **"Unidentified Developer"**: If you see this, Right-click the app > Select **Open** > Click **Open**.
-> 2.  **"App is Damaged"**: If you see this (common with DMGs), run this in Terminal:
+> 2.  **"App is Damaged"**: If you see this, run the command in Terminal based on your download:
+>     
+>     **For .zip downloads:**
 >     ```bash
 >     xattr -cr /Applications/Natively.app
 >     ```
->     *(Or point to wherever you installed the app)*
+>     **For .dmg downloads:**
+>     1. Open Terminal and run: 
+>        ```bash
+>        xattr -cr ~/Downloads/Natively-1.1.7-arm64.dmg
+>        ```
+>     2. Install the natively.dmg
+>     3. Open Terminal and run: `xattr -cr /Applications/Natively.app`
+
 
 ### What's New in v1.1.6
 - **Expanded Speech Providers:** First-class support for **Google, Groq, OpenAI, Deepgram, ElevenLabs, Azure, and IBM Watson**.

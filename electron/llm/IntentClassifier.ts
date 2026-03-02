@@ -29,7 +29,7 @@ const INTENT_ANSWER_SHAPES: Record<ConversationIntent, string> = {
     behavioral: 'Lead with a specific example or story. Use the STAR pattern implicitly. Focus on actions and outcomes.',
     example_request: 'Provide ONE concrete, detailed example. Make it realistic and specific.',
     summary_probe: 'Confirm the summary briefly and add one clarifying point if needed.',
-    coding: 'Provide a smart, production-ready code implementation. Start with a brief approach description, then the code block, then a concise explanation of why this approach works.',
+    coding: 'Provide a FULL, complete, working and production-ready code implementation (including necessary boilerplate like Java imports/classes). Start with a brief approach description, then the fully runnable code block, then a concise explanation of why this approach works.',
     general: 'Respond naturally based on context. Keep it conversational and direct.'
 };
 

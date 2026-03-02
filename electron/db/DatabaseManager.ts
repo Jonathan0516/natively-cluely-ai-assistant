@@ -192,12 +192,49 @@ export class DatabaseManager {
             this.db.exec("ALTER TABLE meetings ADD COLUMN is_processed INTEGER DEFAULT 1"); // Default to 1 (true) for existing records
         } catch (e) { /* Column likely exists */ }
 
+        // Profile Engine: User profile table
+        const createUserProfileTable = `
+            CREATE TABLE IF NOT EXISTS user_profile (
+                id INTEGER PRIMARY KEY,
+                structured_json TEXT NOT NULL,
+                compact_persona TEXT NOT NULL,
+                intro_short TEXT,
+                intro_interview TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+        `;
+        this.db.exec(createUserProfileTable);
+
+        // Profile Engine: Resume nodes table (atomic searchable units)
+        const createResumeNodesTable = `
+            CREATE TABLE IF NOT EXISTS resume_nodes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                category TEXT,
+                title TEXT,
+                organization TEXT,
+                start_date TEXT,
+                end_date TEXT,
+                duration_months INTEGER,
+                text_content TEXT,
+                tags TEXT,
+                embedding BLOB
+            );
+        `;
+        this.db.exec(createResumeNodesTable);
+
         console.log('[DatabaseManager] Migrations completed.');
     }
 
     // ============================================
     // Public API
     // ============================================
+
+    /**
+     * Expose the raw database instance for external managers (e.g. ProfileDatabaseManager).
+     */
+    public getDb(): Database.Database | null {
+        return this.db;
+    }
 
     public saveMeeting(meeting: Meeting, startTimeMs: number, durationMs: number) {
         if (!this.db) {

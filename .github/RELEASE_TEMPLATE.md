@@ -22,8 +22,17 @@ Short one-line description of the release.
 
 ## ⚠️macOS Installation (Unsigned Build)
 
-Download the correct architecture .zip file for your device (Apple Silicon or Intel) and extract it.
+Download the correct architecture .zip or .dmg file for your device (Apple Silicon or Intel).
 
 If you see "App is damaged":
-1. Move the app to your Applications folder.
-2. Open Terminal and run: `xattr -cr /Applications/Natively.app`
+- **For .zip downloads:**
+  1. Move the app to your Applications folder.
+  2. Open Terminal and run: `xattr -cr /Applications/Natively.app`
+
+- **For .dmg downloads:**
+  1. Open Terminal and run: 
+     ```bash
+     xattr -cr ~/Downloads/Natively-1.1.8-arm64.dmg
+     ```
+  2. Install the natively.dmg
+  3. Open Terminal and run: `xattr -cr /Applications/Natively.app`
