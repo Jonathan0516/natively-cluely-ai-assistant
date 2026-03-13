@@ -1,24 +1,21 @@
 ## Summary
-Short one-line description of the release.
+Natively 2.0.3: Dynamic AI Model Selection, Multimodal Fallbacks & Architecture Polish
 
 ## What's New
-- Feature one description
-- Feature two description
-- Feature three description
+- **Dynamic AI Model Selection:** Replaced static model lists with dynamic dropdowns. Your preferred models synced from providers (OpenAI, Anthropic, Google) now automatically appear across the entire app.
+- **Multimodal Resilience:** Added a "Smart Dynamic Fallback" using Groq Llama 4 Scout. If default vision models fail or get rate-limited during screen analysis, Natively instantly reroutes the image to ensure uninterrupted performance.
+- **Multiple Screenshot Support:** The Natively Interface can now handle and process multiple attached screenshots simultaneously instead of just one.
 
 ## Improvements
-- Performance improvement
-- UX refinement
-- Internal optimization
+- **Improved Settings UX:** API keys now auto-save after 5 seconds of inactivity.
+- **Instant UI Sync:** Selecting a preferred model immediately updates the rest of the application without requiring a page reload.
+- **DRY Refactoring:** Centralized model configuration strings across the codebase to ensure easier future updates.
 
 ## Fixes
-- Fixed issue with stealth activation
-- Resolved crash on startup
-- Corrected UI alignment issue
+- **Claude Context Limits:** Resolved max_tokens and context limits issues specific to Anthropic Claude interactions.
 
 ## Technical
-- Dependency updates
-- Refactored updater logic  
+- **Better Embeddings:** Migrated from Gemini Embedding to a completely new and more robust embedding architecture.
 
 ## ⚠️macOS Installation (Unsigned Build)
 
