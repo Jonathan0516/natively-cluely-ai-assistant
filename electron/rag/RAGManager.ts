@@ -17,8 +17,6 @@ export interface RAGManagerConfig {
     dbPath: string;       // Passed to VectorStore so worker can open its own read-only connection
     extPath: string;      // Resolved sqlite-vec extension path (no platform suffix)
     openaiKey?: string;
-    geminiKey?: string;
-    ollamaUrl?: string;
 }
 
 /**
@@ -48,8 +46,6 @@ export class RAGManager {
 
         this.embeddingPipeline.initialize({
             openaiKey: config.openaiKey,
-            geminiKey: config.geminiKey,
-            ollamaUrl: config.ollamaUrl
         }).then(() => {
             // Backfill provider metadata for meetings that were embedded before the
             // embedding_provider column was written (or where the write failed silently).
@@ -68,7 +64,7 @@ export class RAGManager {
         return this.embeddingPipeline;
     }
 
-    initializeEmbeddings(keys: { openaiKey?: string, geminiKey?: string, ollamaUrl?: string }): void {
+    initializeEmbeddings(keys: { openaiKey?: string }): void {
         const initPromise = this.embeddingPipeline.initialize(keys);
         // After init, backfill embedding_provider on meetings that have embedded chunks
         // but a NULL metadata column (common for meetings embedded before this metadata

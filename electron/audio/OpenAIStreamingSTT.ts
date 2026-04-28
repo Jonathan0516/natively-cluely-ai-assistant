@@ -235,6 +235,49 @@ export class OpenAIStreamingSTT extends EventEmitter {
         // WebSocket path: server VAD handles this; nothing to do.
     }
 
+    /**
+     * Force-flush buffered microphone audio when the user stops manual capture.
+     * Without this, the final partial can arrive after the renderer has already
+     * decided there was no speech.
+     */
+    public finalize(): void {
+        if (!this.isActive) return;
+
+        if (this.mode === 'rest') {
+            this._restFlushAndUpload();
+            return;
+        }
+
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.isSessionReady) return;
+
+        if (this.pcmAccumulatorLen > 0) {
+            const combined = new Int16Array(this.pcmAccumulatorLen);
+            let offset = 0;
+            for (const arr of this.pcmAccumulator) {
+                combined.set(arr, offset);
+                offset += arr.length;
+            }
+
+            this.pcmAccumulator = [];
+            this.pcmAccumulatorLen = 0;
+
+            try {
+                this.ws.send(JSON.stringify({
+                    type: 'input_audio_buffer.append',
+                    audio: Buffer.from(combined.buffer).toString('base64'),
+                }));
+            } catch (err) {
+                console.warn('[OpenAIStreaming] WS finalize append failed:', err);
+            }
+        }
+
+        try {
+            this.ws.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+        } catch (err) {
+            console.warn('[OpenAIStreaming] WS finalize commit failed:', err);
+        }
+    }
+
     // ─── WebSocket Path ───────────────────────────────────────────────────────
 
     private _connectWs(): void {
@@ -292,31 +335,19 @@ export class OpenAIStreamingSTT extends EventEmitter {
                 : '';
 
             this.ws!.send(JSON.stringify({
-                type: 'session.update',
+                type: 'transcription_session.update',
                 session: {
-                    audio: {
-                        input: {
-                            format: {
-                                type: 'audio/pcm',
-                                rate: WS_SAMPLE_RATE,
-                            },
-                            transcription: {
-                                model,
-                                prompt: '',
-                                language: lang || '',
-                            },
-                            // Server VAD — offload voice activity detection entirely to the server
-                            turn_detection: {
-                                type:                'server_vad',
-                                threshold:           0.5,
-                                prefix_padding_ms:   300,
-                                silence_duration_ms: 500,
-                            },
-                            // Server-side noise reduction
-                            noise_reduction: {
-                                type: 'near_field',
-                            },
-                        },
+                    input_audio_format: 'pcm16',
+                    input_audio_transcription: {
+                        model,
+                        prompt: '',
+                        language: lang || '',
+                    },
+                    turn_detection: {
+                        type:                'server_vad',
+                        threshold:           0.5,
+                        prefix_padding_ms:   300,
+                        silence_duration_ms: 500,
                     },
                 },
             }));
@@ -396,6 +427,7 @@ export class OpenAIStreamingSTT extends EventEmitter {
                 this._flushRingBuffer();
                 break;
 
+            case 'conversation.item.input_audio_transcription.delta':
             case 'transcript.text.delta':
                 if (msg.delta) {
                     this.emit('transcript', {
@@ -406,16 +438,26 @@ export class OpenAIStreamingSTT extends EventEmitter {
                 }
                 break;
 
-            case 'transcript.text.done':
-                if (msg.text) {
-                    console.log(`[OpenAIStreaming] Final: "${msg.text.substring(0, 60)}"`);
+            case 'conversation.item.input_audio_transcription.completed':
+            case 'transcript.text.done': {
+                const text = msg.transcript ?? msg.text;
+                if (text) {
+                    console.log(`[OpenAIStreaming] Final: "${text.substring(0, 60)}"`);
                     this.emit('transcript', {
-                        text:       msg.text,
+                        text,
                         isFinal:    true,
                         confidence: 1.0,
                     });
                 }
                 break;
+            }
+
+            case 'conversation.item.input_audio_transcription.failed': {
+                const errMsg = msg.error?.message ?? 'Input audio transcription failed';
+                console.error(`[OpenAIStreaming] Transcription failed: ${errMsg}`);
+                this.emit('error', new Error(errMsg));
+                break;
+            }
 
             // VAD events emitted by the server (informational — we don't need to act on them)
             case 'input_audio_buffer.speech_started':

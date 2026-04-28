@@ -76,7 +76,7 @@ export class LiveRAGIndexer {
      * 2. Preprocess (clean, merge speakers)
      * 3. Chunk (semantic boundaries, 200-400 tokens)
      * 4. Save chunks to VectorStore
-     * 5. Embed each chunk via Gemini API
+     * 5. Embed each chunk via OpenAI API
      * 6. Advance high-water mark
      */
     private async tick(): Promise<void> {

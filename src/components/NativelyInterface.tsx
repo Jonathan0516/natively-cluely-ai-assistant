@@ -150,7 +150,7 @@ const NativelyInterface: React.FC<NativelyInterfaceProps> = ({ onEndMeeting, ove
     }, []);
 
     // Model Selection State
-    const [currentModel, setCurrentModel] = useState<string>('gemini-3-flash-preview');
+    const [currentModel, setCurrentModel] = useState<string>('gpt-5.4');
 
     // Dynamic Action Button Mode (Recap vs Brainstorm)
     const [actionButtonMode, setActionButtonMode] = useState<'recap' | 'brainstorm'>('recap');
@@ -1221,13 +1221,15 @@ const NativelyInterface: React.FC<NativelyInterfaceProps> = ({ onEndMeeting, ove
 
     const handleAnswerNow = async () => {
         if (isManualRecording) {
-            // Stop recording - send accumulated voice input to Gemini
-            isRecordingRef.current = false;  // Update ref immediately
+            // Stop recording UI, but keep the capture ref alive briefly so
+            // OpenAI's final transcript can arrive after finalizeMicSTT().
             setIsManualRecording(false);
             setManualTranscript('');  // Clear live preview
 
             // Send manual finalization signal to STT Providers
-            window.electronAPI.finalizeMicSTT().catch(err => console.error('[NativelyInterface] Failed to send finalizeMicSTT:', err));
+            await window.electronAPI.finalizeMicSTT().catch(err => console.error('[NativelyInterface] Failed to send finalizeMicSTT:', err));
+            await new Promise(resolve => setTimeout(resolve, 900));
+            isRecordingRef.current = false;
 
             const currentAttachments = attachedContext;
             setAttachedContext([]); // Clear context immediately on send

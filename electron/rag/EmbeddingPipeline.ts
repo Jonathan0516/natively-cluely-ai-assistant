@@ -1,6 +1,6 @@
 // electron/rag/EmbeddingPipeline.ts
 // Post-meeting embedding generation with queue-based retry logic
-// Uses pluggable IEmbeddingProvider (Gemini, OpenAI, or Ollama)
+// Uses pluggable IEmbeddingProvider (OpenAI with local fallback)
 // On provider exhaustion, automatically falls back to LocalEmbeddingProvider (on-device).
 
 import Database from 'better-sqlite3';
@@ -20,7 +20,7 @@ const RETRY_DELAY_BASE_MS = 2000;
  * - NOT real-time: embeddings generated after meeting ends
  * - Queue-based: persists in SQLite for retry on failure
  * - Background processing: doesn't block UI
- * - Provider-agnostic: works with Gemini, OpenAI, or Ollama embeddings
+ * - Provider-agnostic wrapper currently wired to OpenAI embeddings
  */
 export class EmbeddingPipeline {
     private provider: IEmbeddingProvider | null = null;
@@ -43,7 +43,7 @@ export class EmbeddingPipeline {
     /**
      * Initialize with provider config (picks best available provider)
      * Idempotent: re-initialization only runs if the new config adds at least one
-     * key/URL that was not present in the last config (e.g., Ollama becomes available,
+     * key that was not present in the last config,
      * or a cloud API key is loaded from CredentialsManager after startup).
      * If the config is unchanged or strictly worse, the existing initPromise is returned.
      */
@@ -66,11 +66,7 @@ export class EmbeddingPipeline {
     private _isConfigImprovement(prev: AppAPIConfig, next: AppAPIConfig): boolean {
         const hasNew = (prevVal: string | undefined, nextVal: string | undefined) =>
             !prevVal && !!nextVal;
-        return (
-            hasNew(prev.openaiKey, next.openaiKey) ||
-            hasNew(prev.geminiKey, next.geminiKey) ||
-            hasNew(prev.ollamaUrl, next.ollamaUrl)
-        );
+        return hasNew(prev.openaiKey, next.openaiKey);
     }
 
     private async _doInitialize(config: AppAPIConfig): Promise<void> {
