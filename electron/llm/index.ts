@@ -10,6 +10,7 @@ export { FollowUpLLM } from "./FollowUpLLM";
 export { FollowUpQuestionsLLM } from "./FollowUpQuestionsLLM";
 export { RecapLLM } from "./RecapLLM";
 export { WhatToAnswerLLM } from "./WhatToAnswerLLM";
+export { SystemDesignLLM } from "./SystemDesignLLM";
 export { clampResponse, validateResponse } from "./postProcessor";
 export {
     cleanTranscript,
@@ -45,5 +46,6 @@ export {
     GROQ_FOLLOWUP_EMAIL_PROMPT,
     CODE_HINT_PROMPT,
     buildCodeHintMessage,
-    BRAINSTORM_MODE_PROMPT
+    BRAINSTORM_MODE_PROMPT,
+    SYSTEM_DESIGN_MODE_PROMPT
 } from "./prompts";

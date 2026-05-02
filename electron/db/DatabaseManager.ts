@@ -35,6 +35,7 @@ export interface Meeting {
     calendarEventId?: string;
     source?: 'manual' | 'calendar';
     isProcessed?: boolean;
+    tokenUsage?: any;
 }
 
 export class DatabaseManager {
@@ -584,6 +585,15 @@ export class DatabaseManager {
             this.db.pragma('user_version = 14');
         }
 
+        // Version 14 → 15: Add token_usage_json column on meetings for per-meeting LLM/STT cost analysis
+        if (version < 15) {
+            console.log('[DatabaseManager] Applying migration v14 → v15: Add token_usage_json column to meetings');
+            try {
+                this.db.exec("ALTER TABLE meetings ADD COLUMN token_usage_json TEXT");
+            } catch (e) { /* column may already exist */ }
+            this.db.pragma('user_version = 15');
+        }
+
         console.log('[DatabaseManager] Migrations completed.');
     }
 
@@ -969,8 +979,8 @@ export class DatabaseManager {
         }
 
         const insertMeeting = this.db.prepare(`
-            INSERT OR REPLACE INTO meetings (id, title, start_time, duration_ms, summary_json, created_at, calendar_event_id, source, is_processed)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO meetings (id, title, start_time, duration_ms, summary_json, created_at, calendar_event_id, source, is_processed, token_usage_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         const insertTranscript = this.db.prepare(`
@@ -990,6 +1000,7 @@ export class DatabaseManager {
 
         const runTransaction = this.db.transaction(() => {
             // 1. Insert Meeting
+            const tokenUsageJson = meeting.tokenUsage ? JSON.stringify(meeting.tokenUsage) : null;
             insertMeeting.run(
                 meeting.id,
                 meeting.title,
@@ -999,7 +1010,8 @@ export class DatabaseManager {
                 meeting.date, // Using the ISO string as created_at for sorting simply
                 meeting.calendarEventId || null,
                 meeting.source || 'manual',
-                meeting.isProcessed ? 1 : 0
+                meeting.isProcessed ? 1 : 0,
+                tokenUsageJson
             );
 
             // 2. Insert Transcript
@@ -1196,6 +1208,13 @@ export class DatabaseManager {
             };
         });
 
+        let tokenUsage: any = null;
+        if (meetingRow.token_usage_json) {
+            try { tokenUsage = JSON.parse(meetingRow.token_usage_json); } catch (e) {
+                console.warn('[DatabaseManager] Failed to parse token_usage_json for meeting:', meetingRow.id, e);
+            }
+        }
+
         return {
             id: meetingRow.id,
             title: meetingRow.title,
@@ -1206,7 +1225,8 @@ export class DatabaseManager {
             calendarEventId: meetingRow.calendar_event_id,
             source: meetingRow.source,
             transcript: transcript,
-            usage: usage
+            usage: usage,
+            tokenUsage: tokenUsage
         };
     }
 

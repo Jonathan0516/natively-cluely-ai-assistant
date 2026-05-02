@@ -4,6 +4,7 @@
 
 import { RecapLLM } from './llm';
 import { isVerboseLogging } from './verboseLog';
+import { TokenUsageTracker, TokenUsageSnapshot } from './services/TokenUsageTracker';
 
 export interface TranscriptSegment {
     marker?: string;
@@ -69,6 +70,11 @@ export class SessionTracker {
     private detectedCodingQuestion: string | null = null;
     private codingQuestionSource: 'screenshot' | 'transcript' | null = null;
     private codingQuestionSetAt: number | null = null;
+
+    // Detected system design question / module focus from transcript or screenshot
+    private detectedSystemDesignQuestion: string | null = null;
+    private systemDesignQuestionSource: 'screenshot' | 'transcript' | null = null;
+    private systemDesignQuestionSetAt: number | null = null;
 
     // Rolling buffer for multi-segment interviewer question detection
     private recentInterviewerBuffer: { text: string; timestamp: number }[] = [];
@@ -165,6 +171,75 @@ export class SessionTracker {
      * Requires ≥2 of the signal patterns and minimum length to avoid false positives
      * on casual conversation ("can you implement X?" → yes, "sounds good!" → no).
      */
+    /**
+     * Set the current system design question or module focus.
+     * Same priority rules as coding question (screenshot wins, transcript can override
+     * older transcript or stale screenshot). Module-focus phrases like
+     * "let's design the rate limiter" override an existing full-system question
+     * because the discussion has narrowed.
+     */
+    setSystemDesignQuestion(question: string, source: 'screenshot' | 'transcript'): void {
+        const now = Date.now();
+        const trimmed = question.trim();
+        if (!trimmed) return;
+
+        if (this.detectedSystemDesignQuestion === null) {
+            this.detectedSystemDesignQuestion = trimmed;
+            this.systemDesignQuestionSource = source;
+            this.systemDesignQuestionSetAt = now;
+            console.log(`[SessionTracker] System design question stored (source: ${source}): "${trimmed.substring(0, 80)}..."`);
+            return;
+        }
+
+        if (source === 'screenshot') {
+            this.detectedSystemDesignQuestion = trimmed;
+            this.systemDesignQuestionSource = source;
+            this.systemDesignQuestionSetAt = now;
+            return;
+        }
+
+        const isStale = this.systemDesignQuestionSetAt !== null
+            && (now - this.systemDesignQuestionSetAt) > SessionTracker.SCREENSHOT_STALE_MS;
+        const canOverride = this.systemDesignQuestionSource === 'transcript' || isStale;
+        if (canOverride) {
+            this.detectedSystemDesignQuestion = trimmed;
+            this.systemDesignQuestionSource = source;
+            this.systemDesignQuestionSetAt = now;
+        }
+    }
+
+    getDetectedSystemDesignQuestion(): { question: string | null; source: 'screenshot' | 'transcript' | null } {
+        return { question: this.detectedSystemDesignQuestion, source: this.systemDesignQuestionSource };
+    }
+
+    clearSystemDesignQuestion(): void {
+        this.detectedSystemDesignQuestion = null;
+        this.systemDesignQuestionSource = null;
+        this.systemDesignQuestionSetAt = null;
+    }
+
+    /**
+     * Heuristic for system design questions. Two flavors:
+     *  - Full system: "design X", "how would you build Y", "architect Z"
+     *  - Module focus: "let's design the rate limiter", "now do the cache layer"
+     * Module-focus phrases are short and benefit from a lower length floor.
+     */
+    private looksLikeSystemDesignQuestion(text: string): { match: boolean; isModuleFocus: boolean } {
+        const moduleFocus = /\b(let'?s|now)\s+(design|do|build|sketch|tackle|talk about)\s+(the|a)\s+[a-z][a-z0-9\s\-]{2,40}\b/i.test(text);
+        if (moduleFocus) return { match: true, isModuleFocus: true };
+
+        if (text.length < 30) return { match: false, isModuleFocus: false };
+        const patterns = [
+            /\b(design|architect|build)\b.*\b(system|service|platform|app|application|pipeline|api)\b/i,
+            /\b(how would you|how do you|how could we)\s+(design|build|architect|scale|implement)\b/i,
+            /\b(twitter|youtube|netflix|uber|whatsapp|instagram|tiktok|dropbox|slack|spotify|airbnb)\b/i,
+            /\b(url shortener|rate limiter|chat (system|app)|news feed|recommendation system|search engine|notification (system|service)|payment system|leaderboard|key.?value store|distributed (cache|queue|lock))\b/i,
+            /\b(scal(e|ability|ing)|throughput|latency|consistency|availability|sharding|replication|partition(ing)?|cap theorem|eventual consistency)\b/i,
+        ];
+        const matchCount = patterns.filter(p => p.test(text)).length;
+        return { match: matchCount >= 2, isModuleFocus: false };
+    }
+
     private looksLikeCodingQuestion(text: string): boolean {
         if (text.length < 50) return false;
         const patterns = [
@@ -325,6 +400,18 @@ export class SessionTracker {
                         this.setCodingQuestion(combinedText, 'transcript');
                     }
                 }
+
+                // System design detection runs independently — module-focus phrases
+                // ("let's design the rate limiter") narrow the focus mid-interview.
+                const sd = this.looksLikeSystemDesignQuestion(segment.text);
+                if (sd.match) {
+                    this.setSystemDesignQuestion(segment.text, 'transcript');
+                } else if (this.recentInterviewerBuffer.length > 1) {
+                    const combinedText = this.recentInterviewerBuffer.map(e => e.text).join(' ');
+                    if (this.looksLikeSystemDesignQuestion(combinedText).match) {
+                        this.setSystemDesignQuestion(combinedText, 'transcript');
+                    }
+                }
             }
         }
 
@@ -417,6 +504,14 @@ export class SessionTracker {
         return this.sessionStartTime;
     }
 
+    /**
+     * Snapshot accumulated LLM/STT token usage for this session.
+     * Called by MeetingPersistence before reset() at meeting end.
+     */
+    getTokenUsageSnapshot(): TokenUsageSnapshot {
+        return TokenUsageTracker.snapshot();
+    }
+
     // ============================================
     // Usage Tracking
     // ============================================
@@ -479,7 +574,14 @@ export class SessionTracker {
         this.detectedCodingQuestion = null;
         this.codingQuestionSource = null;
         this.codingQuestionSetAt = null;
+        this.detectedSystemDesignQuestion = null;
+        this.systemDesignQuestionSource = null;
+        this.systemDesignQuestionSetAt = null;
         this.recentInterviewerBuffer = [];
+        // NOTE: TokenUsageTracker is NOT reset here. The post-meeting summary generation
+        // (title + structured notes) happens in MeetingPersistence.processAndSaveMeeting
+        // AFTER reset(), and those tokens belong to the meeting being saved.
+        // MeetingPersistence resets the tracker at the end of processAndSaveMeeting().
     }
 
     // ============================================

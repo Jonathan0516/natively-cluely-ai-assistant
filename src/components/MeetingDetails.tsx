@@ -53,6 +53,36 @@ interface Meeting {
         answer?: string;
         items?: string[];
     }>;
+    tokenUsage?: {
+        totals: {
+            inputTokens: number;
+            outputTokens: number;
+            cachedInputTokens: number;
+            sttSeconds: number;
+            llmCost: number;
+            sttCost: number;
+            totalCost: number;
+            llmCallCount: number;
+        };
+        byProvider: Array<{
+            provider: string;
+            model?: string;
+            inputTokens: number;
+            outputTokens: number;
+            cachedInputTokens: number;
+            callCount: number;
+            cost: number;
+        }>;
+        byModel: Array<{
+            provider: string;
+            model?: string;
+            inputTokens: number;
+            outputTokens: number;
+            cachedInputTokens: number;
+            callCount: number;
+            cost: number;
+        }>;
+    };
 }
 
 interface MeetingDetailsProps {
@@ -65,7 +95,7 @@ const MeetingDetails: React.FC<MeetingDetailsProps> = ({ meeting: initialMeeting
     const isLight = useResolvedTheme() === 'light';
     // We need local state for the meeting object to reflect optimistic updates
     const [meeting, setMeeting] = useState<Meeting>(initialMeeting);
-    const [activeTab, setActiveTab] = useState<'summary' | 'transcript' | 'usage'>('summary');
+    const [activeTab, setActiveTab] = useState<'summary' | 'transcript' | 'usage' | 'analysis'>('summary');
     const [query, setQuery] = useState('');
     const [isCopied, setIsCopied] = useState(false);
     const [isChatOpen, setIsChatOpen] = useState(false);
@@ -217,7 +247,7 @@ ${meeting.detailedSummary.keyPoints?.map(item => `- ${item}`).join('\n') || 'Non
                     {/* Designing Tabs to match reference 1:1 (Dark Pill Container) */}
                     <div className="flex items-center justify-between mb-8">
                         <div className={`p-1 rounded-xl inline-flex items-center gap-0.5 ${isLight ? 'bg-[#E5E5EA] border border-black/[0.04]' : 'bg-[#121214] border border-white/[0.08]'}`}>
-                            {['summary', 'transcript', 'usage'].map((tab) => (
+                            {['summary', 'transcript', 'usage', 'analysis'].map((tab) => (
                                 <button
                                     key={tab}
                                     onClick={() => setActiveTab(tab as any)}
@@ -245,7 +275,7 @@ ${meeting.detailedSummary.keyPoints?.map(item => `- ${item}`).join('\n') || 'Non
                             className="flex items-center gap-2 text-xs font-medium text-text-secondary hover:text-text-primary transition-colors"
                         >
                             {isCopied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
-                            {isCopied ? 'Copied' : activeTab === 'summary' ? 'Copy full summary' : activeTab === 'transcript' ? 'Copy full transcript' : 'Copy usage'}
+                            {isCopied ? 'Copied' : activeTab === 'summary' ? 'Copy full summary' : activeTab === 'transcript' ? 'Copy full transcript' : activeTab === 'usage' ? 'Copy usage' : 'Copy analysis'}
                         </button>
                     </div>
 
@@ -509,6 +539,105 @@ ${meeting.detailedSummary.keyPoints?.map(item => `- ${item}`).join('\n') || 'Non
                                     </div>
                                 ))}
                                 {!meeting.usage?.length && <p className="text-text-tertiary">No usage history.</p>}
+                            </motion.section>
+                        )}
+
+                        {activeTab === 'analysis' && (
+                            <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-8 pb-10">
+                                {(() => {
+                                    const tu = meeting.tokenUsage;
+                                    if (!tu || (!tu.totals.llmCallCount && !tu.totals.sttSeconds)) {
+                                        return (
+                                            <div className="text-text-tertiary text-sm">
+                                                <p>No token usage data recorded for this meeting.</p>
+                                                <p className="mt-2 text-xs">Token tracking was added recently — meetings created before the update will not have analysis data.</p>
+                                            </div>
+                                        );
+                                    }
+                                    const fmtNum = (n: number) => n.toLocaleString();
+                                    const fmtCost = (n: number) => n < 0.01 ? `$${n.toFixed(4)}` : `$${n.toFixed(3)}`;
+                                    const fmtSeconds = (s: number) => {
+                                        const m = Math.floor(s / 60);
+                                        const sec = Math.floor(s % 60);
+                                        return `${m}:${sec.toString().padStart(2, '0')}`;
+                                    };
+                                    return (
+                                        <div className="space-y-8">
+                                            {/* Top-level totals */}
+                                            <section>
+                                                <h2 className="text-lg font-semibold text-text-primary mb-4">This Meeting</h2>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div className={`rounded-xl border p-4 ${isLight ? 'bg-white border-black/[0.06]' : 'bg-[#1A1A1C] border-white/[0.08]'}`}>
+                                                        <div className="text-xs text-text-tertiary uppercase tracking-wider mb-1">Total cost</div>
+                                                        <div className="text-2xl font-semibold text-text-primary">{fmtCost(tu.totals.totalCost)}</div>
+                                                        <div className="text-xs text-text-tertiary mt-1">LLM {fmtCost(tu.totals.llmCost)} · STT {fmtCost(tu.totals.sttCost)}</div>
+                                                    </div>
+                                                    <div className={`rounded-xl border p-4 ${isLight ? 'bg-white border-black/[0.06]' : 'bg-[#1A1A1C] border-white/[0.08]'}`}>
+                                                        <div className="text-xs text-text-tertiary uppercase tracking-wider mb-1">LLM calls</div>
+                                                        <div className="text-2xl font-semibold text-text-primary">{fmtNum(tu.totals.llmCallCount)}</div>
+                                                        <div className="text-xs text-text-tertiary mt-1">requests issued</div>
+                                                    </div>
+                                                    <div className={`rounded-xl border p-4 ${isLight ? 'bg-white border-black/[0.06]' : 'bg-[#1A1A1C] border-white/[0.08]'}`}>
+                                                        <div className="text-xs text-text-tertiary uppercase tracking-wider mb-1">Input tokens</div>
+                                                        <div className="text-2xl font-semibold text-text-primary">{fmtNum(tu.totals.inputTokens)}</div>
+                                                        {tu.totals.cachedInputTokens > 0 && (
+                                                            <div className="text-xs text-text-tertiary mt-1">{fmtNum(tu.totals.cachedInputTokens)} cached</div>
+                                                        )}
+                                                    </div>
+                                                    <div className={`rounded-xl border p-4 ${isLight ? 'bg-white border-black/[0.06]' : 'bg-[#1A1A1C] border-white/[0.08]'}`}>
+                                                        <div className="text-xs text-text-tertiary uppercase tracking-wider mb-1">Output tokens</div>
+                                                        <div className="text-2xl font-semibold text-text-primary">{fmtNum(tu.totals.outputTokens)}</div>
+                                                        <div className="text-xs text-text-tertiary mt-1">generated</div>
+                                                    </div>
+                                                </div>
+                                                {tu.totals.sttSeconds > 0 && (
+                                                    <div className={`mt-3 rounded-xl border p-4 ${isLight ? 'bg-white border-black/[0.06]' : 'bg-[#1A1A1C] border-white/[0.08]'}`}>
+                                                        <div className="text-xs text-text-tertiary uppercase tracking-wider mb-1">STT audio</div>
+                                                        <div className="text-2xl font-semibold text-text-primary">{fmtSeconds(tu.totals.sttSeconds)}</div>
+                                                    </div>
+                                                )}
+                                            </section>
+
+                                            {/* By Model */}
+                                            {tu.byModel?.length > 0 && (
+                                                <section>
+                                                    <h2 className="text-lg font-semibold text-text-primary mb-4">By Model</h2>
+                                                    <div className={`rounded-xl border overflow-hidden ${isLight ? 'border-black/[0.06]' : 'border-white/[0.08]'}`}>
+                                                        <table className="w-full text-sm">
+                                                            <thead className={isLight ? 'bg-[#F5F5F7] text-text-secondary' : 'bg-[#1A1A1C] text-text-tertiary'}>
+                                                                <tr>
+                                                                    <th className="text-left px-4 py-2 font-medium text-xs uppercase tracking-wider">Provider / Model</th>
+                                                                    <th className="text-right px-4 py-2 font-medium text-xs uppercase tracking-wider">Calls</th>
+                                                                    <th className="text-right px-4 py-2 font-medium text-xs uppercase tracking-wider">Input</th>
+                                                                    <th className="text-right px-4 py-2 font-medium text-xs uppercase tracking-wider">Output</th>
+                                                                    <th className="text-right px-4 py-2 font-medium text-xs uppercase tracking-wider">Cost</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {tu.byModel.map((m, i) => (
+                                                                    <tr key={i} className={isLight ? 'border-t border-black/[0.04]' : 'border-t border-white/[0.04]'}>
+                                                                        <td className="px-4 py-2.5 text-text-primary">
+                                                                            <span className="font-medium">{m.provider}</span>
+                                                                            {m.model && <span className="text-text-tertiary ml-2 text-xs font-mono">{m.model}</span>}
+                                                                        </td>
+                                                                        <td className="px-4 py-2.5 text-right text-text-secondary tabular-nums">{fmtNum(m.callCount)}</td>
+                                                                        <td className="px-4 py-2.5 text-right text-text-secondary tabular-nums">{fmtNum(m.inputTokens)}</td>
+                                                                        <td className="px-4 py-2.5 text-right text-text-secondary tabular-nums">{fmtNum(m.outputTokens)}</td>
+                                                                        <td className="px-4 py-2.5 text-right text-text-primary font-medium tabular-nums">{fmtCost(m.cost)}</td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </section>
+                                            )}
+
+                                            <p className="text-xs text-text-tertiary">
+                                                Costs are estimates based on published provider pricing; actual billing may vary. Models without a known price contribute $0 to the cost.
+                                            </p>
+                                        </div>
+                                    );
+                                })()}
                             </motion.section>
                         )}
                     </div>

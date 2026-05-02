@@ -184,6 +184,22 @@ export class IntelligenceManager extends EventEmitter {
         return this.engine.runBrainstorm(imagePaths, problemStatement);
     }
 
+    async runSystemDesign(imagePaths?: string[], problemStatement?: string): Promise<string | null> {
+        return this.engine.runSystemDesign(imagePaths, problemStatement);
+    }
+
+    setSystemDesignQuestion(question: string, source: 'screenshot' | 'transcript'): void {
+        this.session.setSystemDesignQuestion(question, source);
+    }
+
+    getDetectedSystemDesignQuestion(): { question: string | null; source: 'screenshot' | 'transcript' | null } {
+        return this.session.getDetectedSystemDesignQuestion();
+    }
+
+    clearSystemDesignQuestion(): void {
+        this.session.clearSystemDesignQuestion();
+    }
+
     // ============================================
     // State Management
     // ============================================

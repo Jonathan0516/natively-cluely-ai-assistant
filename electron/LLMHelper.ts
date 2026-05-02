@@ -19,6 +19,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import axios from 'axios';
 import { createProviderRateLimiters, RateLimiter } from './services/RateLimiter';
+import { TokenUsageTracker } from './services/TokenUsageTracker';
 const execAsync = promisify(exec);
 
 interface OllamaResponse {
@@ -56,6 +57,7 @@ export class LLMHelper {
   private activeCurlProvider: CurlProvider | null = null;
   private groqFastTextMode: boolean = false;
   private knowledgeOrchestrator: any = null;
+  private profileManager: any = null;
   private customNotes: string = '';
   private aiResponseLanguage: string = 'auto';
   private sttLanguage: string = 'english-us';
@@ -473,6 +475,8 @@ export class LLMHelper {
         }
       });
 
+      try { TokenUsageTracker.recordFromResponse('gemini', targetModel, response); } catch {}
+
       // Debug: log full response structure
       // console.log(`[LLMHelper] Full response:`, JSON.stringify(response, null, 2).substring(0, 500))
 
@@ -722,8 +726,10 @@ CRITICAL RULES:
       ? `\n\n<user_context>\n${this.customNotes.trim()}\n</user_context>\nUse this context naturally if relevant. Never quote it verbatim.`
       : '';
 
+    const profileBlock = this.getProfilePromptBlock();
+
     const basePrompt = activeModePrompt
-      ? `${HARD_SYSTEM_PROMPT}\n\n## ACTIVE MODE\n${activeModePrompt}${customNotesBlock}`
+      ? `${HARD_SYSTEM_PROMPT}${profileBlock}\n\n## ACTIVE MODE\n${activeModePrompt}${customNotesBlock}`
       : `You are an expert conversation coach. Based on the transcript, provide a concise, natural response the user could say.
 
 RULES:
@@ -733,7 +739,7 @@ RULES:
 - If it's a technical question, provide a clear, structured answer
 - Do NOT preface with "You could say" or similar - just give the answer directly
 - If unsure, answer briefly and confidently anyway.
-- Never hedge. Never say "it depends".${customNotesBlock}
+- Never hedge. Never say "it depends".${customNotesBlock}${profileBlock}
 
 CONVERSATION SO FAR:
 ${enrichedContext}
@@ -779,8 +785,173 @@ ANSWER DIRECTLY:`;
     this.customNotes = notes;
   }
 
+  public setProfileManager(pm: any): void {
+    this.profileManager = pm;
+    console.log('[LLMHelper] ProfileManager attached');
+  }
+
+  public getProfileManager(): any {
+    return this.profileManager;
+  }
+
+  /**
+   * Returns the resume + JD context block to prepend to system prompts when
+   * profile mode is on. Stays stable across requests so OpenAI / Anthropic
+   * prompt cache can hit the prefix.
+   */
+  private getProfilePromptBlock(): string {
+    try {
+      const pm = this.profileManager;
+      if (!pm?.isModeOn?.()) return '';
+      const block = pm.buildContextBlock?.() || '';
+      return block ? `\n\n${block}` : '';
+    } catch {
+      return '';
+    }
+  }
+
   public getKnowledgeOrchestrator(): any {
     return this.knowledgeOrchestrator;
+  }
+
+  /**
+   * Generate strict-JSON output from any available LLM provider.
+   * Provider preference: OpenAI → Claude → Gemini → Groq.
+   * Used by ProfileManager to extract structured resume / JD data.
+   */
+  public async generateJson<T = any>(systemPrompt: string, userPrompt: string): Promise<T> {
+    const errors: string[] = [];
+
+    const tryParse = (raw: string): T => {
+      let s = (raw || '').trim();
+      const fenceMatch = s.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+      if (fenceMatch) s = fenceMatch[1].trim();
+      const firstBrace = s.search(/[\[{]/);
+      if (firstBrace > 0) s = s.slice(firstBrace);
+      return JSON.parse(s) as T;
+    };
+
+    const pickOpenAiModel = (): string => {
+      if (this.isOpenAiModel(this.currentModelId)) return this.currentModelId;
+      try {
+        const tier1 = this.modelVersionManager.getTextTieredModels(TextModelFamily.OPENAI).tier1;
+        if (tier1) return tier1;
+      } catch { /* fall through */ }
+      return 'gpt-4o-mini';
+    };
+    const pickClaudeModel = (): string => {
+      if (this.isClaudeModel(this.currentModelId)) return this.currentModelId;
+      try {
+        const tier1 = this.modelVersionManager.getTextTieredModels(TextModelFamily.CLAUDE).tier1;
+        if (tier1) return tier1;
+      } catch { /* fall through */ }
+      return CLAUDE_MODEL;
+    };
+
+    console.log('[LLMHelper.generateJson] start. clients available:', {
+      openai: !!this.openaiClient,
+      claude: !!this.claudeClient,
+      gemini: !!this.client,
+      groq: !!this.groqClient,
+    });
+
+    if (this.openaiClient) {
+      const model = pickOpenAiModel();
+      console.log(`[LLMHelper.generateJson] -> OpenAI (${model})`);
+      try {
+        const resp = await this.withTimeout(
+          this.openaiClient.chat.completions.create({
+            model,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            response_format: { type: 'json_object' },
+            max_completion_tokens: 8192,
+          }),
+          90000,
+          `OpenAI (${model})`
+        );
+        try { TokenUsageTracker.recordFromResponse('openai', model, resp); } catch {}
+        const raw = resp.choices[0]?.message?.content || '';
+        console.log(`[LLMHelper.generateJson] OpenAI returned ${raw.length} chars`);
+        return tryParse(raw);
+      } catch (e: any) {
+        console.warn(`[LLMHelper.generateJson] OpenAI failed: ${e.message}`);
+        errors.push(`OpenAI(${model}): ${e.message}`);
+      }
+    }
+
+    if (this.claudeClient) {
+      const model = pickClaudeModel();
+      console.log(`[LLMHelper.generateJson] -> Claude (${model})`);
+      try {
+        const resp = await this.withTimeout(
+          this.claudeClient.messages.create({
+            model,
+            max_tokens: 8192,
+            system: systemPrompt + '\n\nReturn ONLY the JSON object. No prose.',
+            messages: [{ role: 'user', content: userPrompt }],
+          }),
+          90000,
+          `Claude (${model})`
+        );
+        try { TokenUsageTracker.recordFromResponse('anthropic', model, resp); } catch {}
+        const block: any = (resp as any).content?.[0];
+        const raw = block?.type === 'text' ? block.text : '';
+        console.log(`[LLMHelper.generateJson] Claude returned ${raw.length} chars`);
+        return tryParse(raw);
+      } catch (e: any) {
+        console.warn(`[LLMHelper.generateJson] Claude failed: ${e.message}`);
+        errors.push(`Claude(${model}): ${e.message}`);
+      }
+    }
+
+    if (this.client) {
+      console.log('[LLMHelper.generateJson] -> Gemini');
+      try {
+        const resp = await this.client.models.generateContent({
+          model: GEMINI_FLASH_MODEL,
+          contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+          config: { responseMimeType: 'application/json' } as any,
+        });
+        try { TokenUsageTracker.recordFromResponse('gemini', GEMINI_FLASH_MODEL, resp); } catch {}
+        const raw = (resp as any).text || '';
+        console.log(`[LLMHelper.generateJson] Gemini returned ${raw.length} chars`);
+        return tryParse(raw);
+      } catch (e: any) {
+        console.warn(`[LLMHelper.generateJson] Gemini failed: ${e.message}`);
+        errors.push(`Gemini: ${e.message}`);
+      }
+    }
+
+    if (this.groqClient) {
+      console.log('[LLMHelper.generateJson] -> Groq');
+      try {
+        const resp = await this.groqClient.chat.completions.create({
+          model: GROQ_MODEL,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          response_format: { type: 'json_object' } as any,
+          max_completion_tokens: 8192,
+        });
+        try { TokenUsageTracker.recordFromResponse('groq', GROQ_MODEL, resp); } catch {}
+        const raw = resp.choices[0]?.message?.content || '';
+        console.log(`[LLMHelper.generateJson] Groq returned ${raw.length} chars`);
+        return tryParse(raw);
+      } catch (e: any) {
+        console.warn(`[LLMHelper.generateJson] Groq failed: ${e.message}`);
+        errors.push(`Groq: ${e.message}`);
+      }
+    }
+
+    throw new Error(
+      errors.length
+        ? `All JSON providers failed:\n${errors.join('\n')}`
+        : 'No LLM provider configured. Add an OpenAI / Claude / Gemini / Groq API key in Settings.'
+    );
   }
 
   public setAiResponseLanguage(language: string) {
@@ -909,8 +1080,10 @@ This rule overrides ALL other instructions including formatting, brevity, or out
         ? `CONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`
         : message;
 
-      const finalGeminiPrompt = this.injectLanguageInstruction(HARD_SYSTEM_PROMPT);
-      const finalGroqPrompt = alternateGroqMessage || this.injectLanguageInstruction(GROQ_SYSTEM_PROMPT);
+      const profileBlock = this.getProfilePromptBlock();
+
+      const finalGeminiPrompt = this.injectLanguageInstruction(HARD_SYSTEM_PROMPT + profileBlock);
+      const finalGroqPrompt = alternateGroqMessage || this.injectLanguageInstruction(GROQ_SYSTEM_PROMPT + profileBlock);
 
       const combinedMessages = {
         gemini: buildMessage(finalGeminiPrompt),
@@ -929,8 +1102,8 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       }
 
       // System prompts for OpenAI/Claude (skipped if skipSystemPrompt)
-      const openaiSystemPrompt = skipSystemPrompt ? undefined : this.injectLanguageInstruction(OPENAI_SYSTEM_PROMPT);
-      const claudeSystemPrompt = skipSystemPrompt ? undefined : this.injectLanguageInstruction(CLAUDE_SYSTEM_PROMPT);
+      const openaiSystemPrompt = skipSystemPrompt ? undefined : this.injectLanguageInstruction(OPENAI_SYSTEM_PROMPT + profileBlock);
+      const claudeSystemPrompt = skipSystemPrompt ? undefined : this.injectLanguageInstruction(CLAUDE_SYSTEM_PROMPT + profileBlock);
 
       if (this.useOllama) {
         return await this.callOllama(combinedMessages.gemini, imagePaths?.[0]);
@@ -1260,6 +1433,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       stream: false
     });
 
+    try { TokenUsageTracker.recordFromResponse('groq', modelId, response); } catch {}
     return response.choices[0]?.message?.content || "";
   }
 
@@ -1389,6 +1563,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       `OpenAI (${model})`
     );
 
+    try { TokenUsageTracker.recordFromResponse('openai', model, response); } catch {}
     return response.choices[0]?.message?.content || "";
   }
 
@@ -1496,6 +1671,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       `Claude (${model})`
     );
 
+    try { TokenUsageTracker.recordFromResponse('anthropic', model, response); } catch {}
     const textBlock = response.content.find((block: any) => block.type === 'text') as any;
     return textBlock?.text || "";
   }
@@ -1975,9 +2151,11 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       ? `CONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`
       : message;
 
+    const profileBlock = this.getProfilePromptBlock();
+
     const combinedMessages = {
-      gemini: buildCombinedMessage(HARD_SYSTEM_PROMPT),
-      groq: buildCombinedMessage(GROQ_SYSTEM_PROMPT),
+      gemini: buildCombinedMessage(HARD_SYSTEM_PROMPT + profileBlock),
+      groq: buildCombinedMessage(GROQ_SYSTEM_PROMPT + profileBlock),
     };
 
     if (this.useOllama) {
@@ -1997,8 +2175,8 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     const providers: ProviderAttempt[] = [];
 
     // System prompts for OpenAI/Claude (skipped if skipSystemPrompt)
-    const openaiSystemPrompt = skipSystemPrompt ? undefined : this.injectLanguageInstruction(OPENAI_SYSTEM_PROMPT);
-    const claudeSystemPrompt = skipSystemPrompt ? undefined : this.injectLanguageInstruction(CLAUDE_SYSTEM_PROMPT);
+    const openaiSystemPrompt = skipSystemPrompt ? undefined : this.injectLanguageInstruction(OPENAI_SYSTEM_PROMPT + profileBlock);
+    const claudeSystemPrompt = skipSystemPrompt ? undefined : this.injectLanguageInstruction(CLAUDE_SYSTEM_PROMPT + profileBlock);
 
     // Get auto-discovered text model IDs from ModelVersionManager
     const textOpenAI = this.modelVersionManager.getTextTieredModels(TextModelFamily.OPENAI).tier1;
@@ -2198,9 +2376,16 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     // Preparation
     const isMultimodal = !!(imagePaths?.length);
 
-    // Determine the system prompt to use
-    // logic: if override provided, use it. otherwise use HARD_SYSTEM_PROMPT (which is the universal base)
-    const baseSystemPrompt = systemPromptOverride || HARD_SYSTEM_PROMPT;
+    const profileBlock = this.getProfilePromptBlock();
+    if (profileBlock) {
+      console.log(`[LLMHelper] Profile context injected into streamChat (${profileBlock.length} chars)`);
+    }
+
+    // Determine the system prompt to use.
+    // If Knowledge/Mode supplied an override, preserve it and append profile intelligence.
+    const baseSystemPrompt = systemPromptOverride
+      ? `${systemPromptOverride}${profileBlock}`
+      : `${HARD_SYSTEM_PROMPT}${profileBlock}`;
     const finalSystemPrompt = this.injectLanguageInstruction(baseSystemPrompt);
 
     // Helper to build combined user message
@@ -2215,7 +2400,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       if (this.groqClient) {
         console.log(`[LLMHelper] ⚡️ Groq Fast Text Mode Active (Streaming). Routing to local Groq...`);
         try {
-          const groqSystem = systemPromptOverride || GROQ_SYSTEM_PROMPT;
+          const groqSystem = systemPromptOverride ? baseSystemPrompt : `${GROQ_SYSTEM_PROMPT}${profileBlock}`;
           const finalGroqSystem = this.injectLanguageInstruction(groqSystem);
           const groqFullMessage = `${finalGroqSystem}\n\n${userContent}`;
           yield* this.streamWithGroq(groqFullMessage, this.currentModelId);
@@ -2267,7 +2452,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
 
     // OpenAI
     if (this.isOpenAiModel(this.currentModelId) && this.openaiClient) {
-      const openAiSystem = systemPromptOverride || OPENAI_SYSTEM_PROMPT;
+      const openAiSystem = systemPromptOverride ? baseSystemPrompt : `${OPENAI_SYSTEM_PROMPT}${profileBlock}`;
       const finalOpenAiSystem = this.injectLanguageInstruction(openAiSystem);
       if (isMultimodal && imagePaths) {
         yield* this.streamWithOpenaiMultimodal(userContent, imagePaths, finalOpenAiSystem);
@@ -2279,7 +2464,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
 
     // Claude
     if (this.isClaudeModel(this.currentModelId) && this.claudeClient) {
-      const claudeSystem = systemPromptOverride || CLAUDE_SYSTEM_PROMPT;
+      const claudeSystem = systemPromptOverride ? baseSystemPrompt : `${CLAUDE_SYSTEM_PROMPT}${profileBlock}`;
       const finalClaudeSystem = this.injectLanguageInstruction(claudeSystem);
       if (isMultimodal && imagePaths) {
         yield* this.streamWithClaudeMultimodal(userContent, imagePaths, finalClaudeSystem);
@@ -2293,13 +2478,13 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     if (this.isGroqModel(this.currentModelId) && this.groqClient) {
       if (isMultimodal && imagePaths) {
         // Route multimodal to Groq Llama 4 Scout (vision-capable)
-        const groqSystem = systemPromptOverride || OPENAI_SYSTEM_PROMPT;
+        const groqSystem = systemPromptOverride ? baseSystemPrompt : `${OPENAI_SYSTEM_PROMPT}${profileBlock}`;
         const finalGroqSystem = this.injectLanguageInstruction(groqSystem);
         yield* this.streamWithGroqMultimodal(userContent, imagePaths, finalGroqSystem);
         return;
       }
       // Text-only Groq
-      const groqSystem = systemPromptOverride ? baseSystemPrompt : GROQ_SYSTEM_PROMPT;
+      const groqSystem = systemPromptOverride ? baseSystemPrompt : `${GROQ_SYSTEM_PROMPT}${profileBlock}`;
       const finalGroqSystem = this.injectLanguageInstruction(groqSystem);
       const groqFullMessage = `${finalGroqSystem}\n\n${userContent}`;
       yield* this.streamWithGroq(groqFullMessage, this.currentModelId);
@@ -2321,11 +2506,11 @@ This rule overrides ALL other instructions including formatting, brevity, or out
           if (this.groqClient) {
             try {
               if (isMultimodal && imagePaths) {
-                const groqSystem = systemPromptOverride || OPENAI_SYSTEM_PROMPT;
+                const groqSystem = systemPromptOverride ? baseSystemPrompt : `${OPENAI_SYSTEM_PROMPT}${profileBlock}`;
                 const finalGroqSystem = this.injectLanguageInstruction(groqSystem);
                 yield* this.streamWithGroqMultimodal(userContent, imagePaths, finalGroqSystem);
               } else {
-                const groqSystem = systemPromptOverride ? baseSystemPrompt : GROQ_SYSTEM_PROMPT;
+                const groqSystem = systemPromptOverride ? baseSystemPrompt : `${GROQ_SYSTEM_PROMPT}${profileBlock}`;
                 const finalGroqSystem = this.injectLanguageInstruction(groqSystem);
                 yield* this.streamWithGroq(`${finalGroqSystem}\n\n${userContent}`); // intentional: emergency fallback waterfall — use stable GROQ_MODEL baseline, not currentModelId
               }
@@ -2476,18 +2661,22 @@ This rule overrides ALL other instructions including formatting, brevity, or out
   private async * streamWithGroq(fullMessage: string, modelId: string = GROQ_MODEL): AsyncGenerator<string, void, unknown> {
     if (!this.groqClient) throw new Error("Groq client not initialized");
 
-    const stream = await this.groqClient.chat.completions.create({
+    const stream = await (this.groqClient.chat.completions.create as any)({
       model: modelId,
       messages: [{ role: "user", content: fullMessage }],
       stream: true,
       temperature: 0.4,
       max_tokens: 8192,
+      stream_options: { include_usage: true },
     });
 
     for await (const chunk of stream) {
       const content = chunk.choices[0]?.delta?.content;
       if (content) {
         yield content;
+      }
+      if ((chunk as any).usage) {
+        try { TokenUsageTracker.recordFromResponse('groq', modelId, chunk); } catch {}
       }
     }
   }
@@ -2513,20 +2702,24 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     }
     messages.push({ role: "user", content: contentParts });
 
-    const stream = await this.groqClient.chat.completions.create({
+    const stream = await (this.groqClient.chat.completions.create as any)({
       model: "meta-llama/llama-4-scout-17b-16e-instruct",
       messages,
       stream: true,
       max_tokens: 8192,
       temperature: 1,
       top_p: 1,
-      stop: null
+      stop: null,
+      stream_options: { include_usage: true },
     });
 
     for await (const chunk of stream) {
       const content = chunk.choices[0]?.delta?.content;
       if (content) {
         yield content;
+      }
+      if ((chunk as any).usage) {
+        try { TokenUsageTracker.recordFromResponse('groq', "meta-llama/llama-4-scout-17b-16e-instruct", chunk); } catch {}
       }
     }
   }
@@ -2551,12 +2744,16 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       messages,
       stream: true,
       max_completion_tokens: model.toLowerCase().includes('claude') ? CLAUDE_MAX_OUTPUT_TOKENS : MAX_OUTPUT_TOKENS,
+      stream_options: { include_usage: true },
     });
 
     for await (const chunk of stream) {
       const content = chunk.choices[0]?.delta?.content;
       if (content) {
         yield content;
+      }
+      if ((chunk as any).usage) {
+        try { TokenUsageTracker.recordFromResponse('openai', model, chunk); } catch {}
       }
     }
   }
@@ -2577,10 +2774,24 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       messages: [{ role: "user", content: userMessage }],
     });
 
+    let claudeInputTokens = 0;
+    let claudeOutputTokens = 0;
     for await (const event of stream) {
-      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-        yield event.delta.text;
+      if (event.type === 'content_block_delta' && (event as any).delta.type === 'text_delta') {
+        yield (event as any).delta.text;
       }
+      if ((event as any).type === 'message_start' && (event as any).message?.usage) {
+        claudeInputTokens = (event as any).message.usage.input_tokens || 0;
+        claudeOutputTokens = (event as any).message.usage.output_tokens || 0;
+      }
+      if ((event as any).type === 'message_delta' && (event as any).usage) {
+        if (typeof (event as any).usage.output_tokens === 'number') {
+          claudeOutputTokens = (event as any).usage.output_tokens;
+        }
+      }
+    }
+    if (claudeInputTokens > 0 || claudeOutputTokens > 0) {
+      try { TokenUsageTracker.recordLLM('anthropic', model, { inputTokens: claudeInputTokens, outputTokens: claudeOutputTokens }); } catch {}
     }
   }
 
@@ -2612,12 +2823,16 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       messages,
       stream: true,
       max_completion_tokens: model.toLowerCase().includes('claude') ? CLAUDE_MAX_OUTPUT_TOKENS : MAX_OUTPUT_TOKENS,
+      stream_options: { include_usage: true },
     });
 
     for await (const chunk of stream) {
       const content = chunk.choices[0]?.delta?.content;
       if (content) {
         yield content;
+      }
+      if ((chunk as any).usage) {
+        try { TokenUsageTracker.recordFromResponse('openai', model, chunk); } catch {}
       }
     }
   }
@@ -2659,10 +2874,24 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       }],
     });
 
+    let claudeInputTokens = 0;
+    let claudeOutputTokens = 0;
     for await (const event of stream) {
-      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-        yield event.delta.text;
+      if (event.type === 'content_block_delta' && (event as any).delta.type === 'text_delta') {
+        yield (event as any).delta.text;
       }
+      if ((event as any).type === 'message_start' && (event as any).message?.usage) {
+        claudeInputTokens = (event as any).message.usage.input_tokens || 0;
+        claudeOutputTokens = (event as any).message.usage.output_tokens || 0;
+      }
+      if ((event as any).type === 'message_delta' && (event as any).usage) {
+        if (typeof (event as any).usage.output_tokens === 'number') {
+          claudeOutputTokens = (event as any).usage.output_tokens;
+        }
+      }
+    }
+    if (claudeInputTokens > 0 || claudeOutputTokens > 0) {
+      try { TokenUsageTracker.recordLLM('anthropic', model, { inputTokens: claudeInputTokens, outputTokens: claudeOutputTokens }); } catch {}
     }
   }
 
@@ -2699,6 +2928,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     // @ts-ignore
     const stream = streamResult.stream || streamResult;
 
+    let lastUsageMetadata: any = null;
     for await (const chunk of stream) {
       let chunkText = "";
       if (typeof chunk.text === 'function') {
@@ -2711,6 +2941,12 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       if (chunkText) {
         yield chunkText;
       }
+      if ((chunk as any).usageMetadata) {
+        lastUsageMetadata = (chunk as any).usageMetadata;
+      }
+    }
+    if (lastUsageMetadata) {
+      try { TokenUsageTracker.recordFromResponse('gemini', model, { usageMetadata: lastUsageMetadata }); } catch {}
     }
   }
 
@@ -3357,6 +3593,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
           "Groq Summary"
         );
 
+        try { TokenUsageTracker.recordFromResponse('groq', GROQ_MODEL, response); } catch {}
         const text = response.choices[0]?.message?.content || "";
         if (text.trim().length > 0) {
           console.log(`[LLMHelper] ✅ Groq summary generated successfully.`);
@@ -3415,6 +3652,7 @@ This rule overrides ALL other instructions including formatting, brevity, or out
             60000,
             `Gemini Pro Summary (Attempt ${attempt})`
           );
+          try { TokenUsageTracker.recordFromResponse('gemini', GEMINI_PRO_MODEL, response); } catch {}
           const text = response.text || "";
 
           if (text.trim().length > 0) {

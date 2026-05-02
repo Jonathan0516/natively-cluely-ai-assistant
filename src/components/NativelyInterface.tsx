@@ -27,7 +27,8 @@ import {
     Code,
     Copy,
     Check,
-    PointerOff
+    PointerOff,
+    Network
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -1005,6 +1006,39 @@ const NativelyInterface: React.FC<NativelyInterfaceProps> = ({ onEndMeeting, ove
         }
     };
 
+    const handleSystemDesign = async () => {
+        setIsExpanded(true);
+        setIsProcessing(true);
+        analytics.trackCommandExecuted('systemDesign');
+
+        const currentAttachments = attachedContext;
+        if (currentAttachments.length > 0) {
+            setAttachedContext([]);
+            setMessages(prev => [...prev, {
+                id: Date.now().toString(),
+                role: 'user',
+                text: 'Draw the system design',
+                hasScreenshot: true,
+                screenshotPreview: currentAttachments[0].preview
+            }]);
+            setTimeout(() => {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, 50);
+        }
+
+        try {
+            await window.electronAPI.generateSystemDesign(currentAttachments.length > 0 ? currentAttachments.map(s => s.path) : undefined);
+        } catch (err) {
+            setMessages(prev => [...prev, {
+                id: Date.now().toString(),
+                role: 'system',
+                text: `Error: ${err}`
+            }]);
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
 
     // Setup Streaming Listeners
     useEffect(() => {
@@ -1722,7 +1756,8 @@ Provide only the answer, nothing else.`;
         handleAnswerNow,
         handleClarify,
         handleCodeHint,
-        handleBrainstorm
+        handleBrainstorm,
+        handleSystemDesign
     });
 
     // Update ref on every render so the event listener always access latest state/props
@@ -1734,7 +1769,8 @@ Provide only the answer, nothing else.`;
         handleAnswerNow,
         handleClarify,
         handleCodeHint,
-        handleBrainstorm
+        handleBrainstorm,
+        handleSystemDesign
     };
 
     useEffect(() => {
@@ -1969,6 +2005,7 @@ Provide only the answer, nothing else.`;
             else if (action === 'clarify') handlers.handleClarify();
             else if (action === 'codeHint') handlers.handleCodeHint();
             else if (action === 'brainstorm') handlers.handleBrainstorm();
+            else if (action === 'systemDesign') handlers.handleSystemDesign();
             else if (action === 'scrollUp') scrollContainerRef.current?.scrollBy({ top: -100, behavior: 'smooth' });
             else if (action === 'scrollDown') scrollContainerRef.current?.scrollBy({ top: 100, behavior: 'smooth' });
             else if (action === 'processScreenshots') generalHandlers.processScreenshots();
@@ -2227,6 +2264,9 @@ Provide only the answer, nothing else.`;
                                 </button>
                                 <button onClick={handleClarify} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium border transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0 ${quickActionClass}`} style={appearance.chipStyle}>
                                     <MessageSquare className="w-3 h-3 opacity-70" /> Clarify
+                                </button>
+                                <button onClick={handleSystemDesign} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium border transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0 ${quickActionClass}`} style={appearance.chipStyle}>
+                                    <Network className="w-3 h-3 opacity-70" /> System Design
                                 </button>
                                 <button onClick={actionButtonMode === 'brainstorm' ? handleBrainstorm : handleRecap} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium border transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0 ${quickActionClass}`} style={appearance.chipStyle}>
                                     {actionButtonMode === 'brainstorm'

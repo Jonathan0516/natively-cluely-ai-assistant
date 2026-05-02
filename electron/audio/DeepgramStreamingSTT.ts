@@ -9,6 +9,7 @@
 
 import { EventEmitter } from 'events';
 import { RECOGNITION_LANGUAGES } from '../config/languages';
+import { TokenUsageTracker } from '../services/TokenUsageTracker';
 
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 30000;
@@ -118,6 +119,8 @@ export class DeepgramStreamingSTT extends EventEmitter {
 
         try {
             this.live.send(chunk);
+            const seconds = chunk.length / (this.sampleRate * 2 * this.numChannels);
+            try { TokenUsageTracker.recordSTT('deepgram', seconds); } catch {}
         } catch (err: any) {
             console.error('[DeepgramStreaming] Send error:', err?.message);
         }
