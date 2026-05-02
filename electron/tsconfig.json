@@ -2,18 +2,17 @@
   "compilerOptions": {
     "target": "ESNext",
     "module": "CommonJS",
+    "composite": true,
     "allowJs": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
     "noImplicitAny": true,
     "sourceMap": true,
     "jsx": "react-jsx",
-    "baseUrl": ".",
     "rootDir": "..",
     "outDir": "../dist-electron",
-    "moduleResolution": "node",
-    "resolveJsonModule": true,
-    "types": ["node"]
+    "moduleResolution": "node10",
+    "resolveJsonModule": true
   },
   "include": [
     "**/*.ts",

@@ -8,6 +8,7 @@
     "noEmit": true, // Vite handles the building
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
+    "types": ["vite/client", "node"],
     "isolatedModules": true,
     "strict": true,
     "noUnusedLocals": false,
@@ -21,5 +22,8 @@
     }
   },
   "include": ["src", "premium/src"], // React source files and optional premium components
-  "references": [{ "path": "./tsconfig.node.json" }]
+  "references": [
+    { "path": "./tsconfig.node.json" },
+    { "path": "./electron" }
+  ]
 }
