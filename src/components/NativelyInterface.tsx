@@ -2237,7 +2237,7 @@ Provide only the answer, nothing else.`;
                                     }
                                 </button>
                                 <button onClick={handleFollowUpQuestions} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium border transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0 ${quickActionClass}`} style={appearance.chipStyle}>
-                                    <HelpCircle className="w-3 h-3 opacity-70" /> Follow Up Question
+                                    <HelpCircle className="w-3 h-3 opacity-70" /> Followup
                                 </button>
                                 <button
                                     onClick={handleAnswerNow}
