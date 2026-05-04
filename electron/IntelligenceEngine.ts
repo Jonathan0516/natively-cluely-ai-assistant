@@ -7,13 +7,13 @@ import { LLMHelper } from './LLMHelper';
 import { SessionTracker, TranscriptSegment, SuggestionTrigger, ContextItem } from './SessionTracker';
 import {
     AnswerLLM, AssistLLM, BrainstormLLM, ClarifyLLM, CodeHintLLM, FollowUpLLM, RecapLLM,
-    FollowUpQuestionsLLM, WhatToAnswerLLM,
+    FollowUpQuestionsLLM, WhatToAnswerLLM, SystemDesignLLM,
     prepareTranscriptForWhatToAnswer, buildTemporalContext,
     AssistantResponse as LLMAssistantResponse, classifyIntent
 } from './llm';
 
 // Mode types
-export type IntelligenceMode = 'idle' | 'assist' | 'what_to_say' | 'follow_up' | 'recap' | 'clarify' | 'manual' | 'follow_up_questions' | 'code_hint' | 'brainstorm';
+export type IntelligenceMode = 'idle' | 'assist' | 'what_to_say' | 'follow_up' | 'recap' | 'clarify' | 'manual' | 'follow_up_questions' | 'code_hint' | 'brainstorm' | 'system_design';
 
 // Refinement intent detection (refined to avoid false positives)
 function detectRefinementIntent(userText: string): { isRefinement: boolean; intent: string } {
@@ -70,6 +70,7 @@ export class IntelligenceEngine extends EventEmitter {
     private whatToAnswerLLM: WhatToAnswerLLM | null = null;
     private codeHintLLM: CodeHintLLM | null = null;
     private brainstormLLM: BrainstormLLM | null = null;
+    private systemDesignLLM: SystemDesignLLM | null = null;
 
     // Concurrency tracking
     private assistCancellationToken: AbortController | null = null;
@@ -120,6 +121,7 @@ export class IntelligenceEngine extends EventEmitter {
         this.whatToAnswerLLM = new WhatToAnswerLLM(this.llmHelper);
         this.codeHintLLM = new CodeHintLLM(this.llmHelper);
         this.brainstormLLM = new BrainstormLLM(this.llmHelper);
+        this.systemDesignLLM = new SystemDesignLLM(this.llmHelper);
 
         // Sync RecapLLM reference to SessionTracker for epoch compaction
         this.session.setRecapLLM(this.recapLLM);
@@ -797,6 +799,98 @@ export class IntelligenceEngine extends EventEmitter {
 
         } catch (error) {
             this.emit('error', error as Error, 'brainstorm');
+            this.setMode('idle');
+            return null;
+        }
+    }
+
+    /**
+     * MODE: System Design (ASCII Diagram Generator)
+     * Draws an ASCII box diagram for the detected system design question or
+     * the module currently in focus.
+     */
+    async runSystemDesign(imagePaths?: string[], problemStatement?: string): Promise<string | null> {
+        if (this.assistCancellationToken) {
+            this.assistCancellationToken.abort();
+            this.assistCancellationToken = null;
+        }
+
+        this.setMode('system_design');
+
+        try {
+            if (!this.systemDesignLLM) {
+                this.setMode('idle');
+                return "Please configure your API Keys in Settings to use this feature.";
+            }
+
+            let context = this.session.getFormattedContext(180);
+            const resolvedProblem = problemStatement?.trim() ||
+                this.session.getDetectedSystemDesignQuestion().question?.trim();
+
+            if (!context.trim() && !resolvedProblem && (!imagePaths || imagePaths.length === 0)) {
+                this.setMode('idle');
+                const msg = "There's no system design question to draw yet. Make sure the question or module is visible or spoken aloud, then try again.";
+                this.session.addAssistantMessage(msg);
+                this.emit('suggested_answer', msg, 'System Design', 1.0);
+                return msg;
+            }
+
+            if (resolvedProblem) {
+                context = `<problem_statement>\n${resolvedProblem}\n</problem_statement>\n\n${context}`;
+            }
+
+            // System design always pulls in resume + JD when uploaded, regardless of
+            // the global profileMode toggle — entity analysis and tech choices should
+            // reflect the candidate's stack and the target role.
+            try {
+                const pm = this.llmHelper.getProfileManager?.();
+                const profileBlock = pm?.buildSystemDesignContextBlock?.() || '';
+                if (profileBlock) {
+                    context = `${profileBlock}\n\n${context}`;
+                }
+            } catch (e) {
+                console.warn('[IntelligenceEngine] runSystemDesign: profile injection failed (non-fatal):', e);
+            }
+
+            const generationId = ++this.currentGenerationId;
+            let fullResult = "";
+            const stream = this.systemDesignLLM.generateStream(context, imagePaths);
+            let streamAborted = false;
+
+            for await (const token of stream) {
+                if (this.currentGenerationId !== generationId) {
+                    console.log('[IntelligenceEngine] system_design stream aborted by new generation');
+                    await stream.return(undefined);
+                    streamAborted = true;
+                    break;
+                }
+                this.emit('suggested_answer_token', token, 'System Design', 1.0);
+                fullResult += token;
+            }
+
+            if (streamAborted) {
+                this.setMode('idle');
+                return null;
+            }
+
+            if (!fullResult || fullResult.trim().length < 5) {
+                fullResult = "Couldn't draw a system design diagram. Make sure the question is visible and try again.";
+            }
+
+            this.session.addAssistantMessage(fullResult);
+            this.session.pushUsage({
+                type: 'assist',
+                timestamp: Date.now(),
+                question: 'System Design',
+                answer: fullResult
+            });
+
+            this.emit('suggested_answer', fullResult, 'System Design', 1.0);
+            this.setMode('idle');
+            return fullResult;
+
+        } catch (error) {
+            this.emit('error', error as Error, 'system_design');
             this.setMode('idle');
             return null;
         }

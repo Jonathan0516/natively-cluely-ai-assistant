@@ -12,7 +12,6 @@ const SettingsPopup = () => {
     });
     const [profileMode, setProfileMode] = useState(false);
     const [hasProfile, setHasProfile] = useState(false);
-    const [isPremium, setIsPremium] = useState(false);
 
     const isFirstRender = React.useRef(true);
 
@@ -52,9 +51,6 @@ const SettingsPopup = () => {
                     setHasProfile(status.hasProfile);
                     setProfileMode(status.profileMode);
                 }
-                // Check premium status
-                const premium = await window.electronAPI?.licenseCheckPremium?.();
-                setIsPremium(!!premium);
             } catch (e) { console.warn('[SettingsPopup] Failed to load profile/premium status:', e); }
 
         };
@@ -302,17 +298,16 @@ const SettingsPopup = () => {
 
                 {/* Profile Mode Toggle */}
                 {hasProfile && (
-                    <div className={`flex items-center justify-between px-3 py-2 rounded-lg transition-colors duration-200 group ${!isPremium ? 'opacity-50 grayscale cursor-not-allowed' : `${itemHoverClass} cursor-default`}`} title={!isPremium ? 'Requires Pro license to be active' : ''}>
+                    <div className={`flex items-center justify-between px-3 py-2 rounded-lg transition-colors duration-200 group ${itemHoverClass} cursor-default`}>
                         <div className="flex items-center gap-3">
                             <User
-                                className={`w-3.5 h-3.5 transition-colors ${profileMode && isPremium ? 'text-accent-primary' : iconInactiveClass}`}
-                                fill={profileMode && isPremium ? "currentColor" : "none"}
+                                className={`w-3.5 h-3.5 transition-colors ${profileMode ? 'text-accent-primary' : iconInactiveClass}`}
+                                fill={profileMode ? "currentColor" : "none"}
                             />
-                            <span className={`text-[12px] font-medium transition-colors ${profileMode && isPremium ? (isLightTheme ? 'text-slate-950' : 'text-white') : labelInactiveClass}`}>Profile Mode</span>
+                            <span className={`text-[12px] font-medium transition-colors ${profileMode ? (isLightTheme ? 'text-slate-950' : 'text-white') : labelInactiveClass}`}>Profile Mode</span>
                         </div>
                         <button
                             onClick={async () => {
-                                if (!isPremium) return;
                                 const newState = !profileMode;
                                 setProfileMode(newState);
                                 try {
@@ -320,10 +315,9 @@ const SettingsPopup = () => {
                                     await window.electronAPI?.profileSetMode?.(newState);
                                 } catch (e) { console.error(e); }
                             }}
-                            className={`w-[30px] h-[18px] rounded-full p-[1.5px] transition-all duration-300 ease-spring active:scale-[0.92] ${profileMode && isPremium ? 'bg-accent-primary shadow-[0_2px_10px_rgba(var(--color-accent-primary),0.3)]' : defaultToggleTrackClass}`}
-                            disabled={!isPremium}
+                            className={`w-[30px] h-[18px] rounded-full p-[1.5px] transition-all duration-300 ease-spring active:scale-[0.92] ${profileMode ? 'bg-accent-primary shadow-[0_2px_10px_rgba(var(--color-accent-primary),0.3)]' : defaultToggleTrackClass}`}
                         >
-                            <div className={`w-[15px] h-[15px] rounded-full transition-transform duration-300 ease-spring ${toggleKnobClass} ${profileMode && isPremium ? 'translate-x-[12px]' : 'translate-x-0'}`} />
+                            <div className={`w-[15px] h-[15px] rounded-full transition-transform duration-300 ease-spring ${toggleKnobClass} ${profileMode ? 'translate-x-[12px]' : 'translate-x-0'}`} />
                         </button>
                     </div>
                 )}

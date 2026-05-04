@@ -2,6 +2,7 @@ import { SpeechClient } from '@google-cloud/speech';
 import { EventEmitter } from 'events';
 import * as path from 'path';
 import { RECOGNITION_LANGUAGES, EnglishVariant } from '../config/languages';
+import { TokenUsageTracker } from '../services/TokenUsageTracker';
 
 /**
  * GoogleSTT
@@ -218,6 +219,8 @@ export class GoogleSTT extends EventEmitter {
 
             if (this.stream.writable) {
                 this.stream.write(audioData);
+                const seconds = audioData.length / (this.sampleRateHertz * 2 * this.audioChannelCount);
+                try { TokenUsageTracker.recordSTT('google', seconds); } catch {}
             } else {
                 console.warn(`[GoogleSTT/${this.label}] Stream not writable! (write #${this.writeCount})`);
             }

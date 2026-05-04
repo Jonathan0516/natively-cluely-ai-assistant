@@ -1,8 +1,8 @@
 
-import Database from 'better-sqlite3';
-import path from 'path';
+import Database = require('better-sqlite3');
+import * as path from 'path';
 import { app } from 'electron';
-import fs from 'fs';
+import * as fs from 'fs';
 import * as sqliteVec from 'sqlite-vec';
 
 // Interfaces for our data objects
@@ -35,6 +35,7 @@ export interface Meeting {
     calendarEventId?: string;
     source?: 'manual' | 'calendar';
     isProcessed?: boolean;
+    tokenUsage?: any;
 }
 
 export class DatabaseManager {
@@ -584,6 +585,15 @@ export class DatabaseManager {
             this.db.pragma('user_version = 14');
         }
 
+        // Version 14 → 15: Add token_usage_json column on meetings for per-meeting LLM/STT cost analysis
+        if (version < 15) {
+            console.log('[DatabaseManager] Applying migration v14 → v15: Add token_usage_json column to meetings');
+            try {
+                this.db.exec("ALTER TABLE meetings ADD COLUMN token_usage_json TEXT");
+            } catch (e) { /* column may already exist */ }
+            this.db.pragma('user_version = 15');
+        }
+
         console.log('[DatabaseManager] Migrations completed.');
     }
 
@@ -826,24 +836,25 @@ export class DatabaseManager {
      */
     private migrateExistingEmbeddings(): void {
         if (!this.db) return;
+        const db = this.db;
 
         // Migrate chunk embeddings
         try {
-            const chunkRows = this.db.prepare(
+            const chunkRows = db.prepare(
                 'SELECT id, embedding FROM chunks WHERE embedding IS NOT NULL'
             ).all() as any[];
 
             if (chunkRows.length > 0) {
-                const insert = this.db.prepare(
+                const insert = db.prepare(
                     'INSERT OR IGNORE INTO vec_chunks(chunk_id, embedding) VALUES (?, ?)'
                 );
-                const migrateAll = this.db.transaction(() => {
+                const migrateAll = db.transaction(() => {
                     for (const row of chunkRows) {
                         try {
                             insert.run(row.id, row.embedding);
                         } catch (err) {
                             // On mismatch (e.g. mixed 768 and 3072 dims), nullify to re-embed later
-                            this.db.prepare('UPDATE chunks SET embedding = NULL WHERE id = ?').run(row.id);
+                            db.prepare('UPDATE chunks SET embedding = NULL WHERE id = ?').run(row.id);
                         }
                     }
                 });
@@ -856,20 +867,20 @@ export class DatabaseManager {
 
         // Migrate summary embeddings
         try {
-            const summaryRows = this.db.prepare(
+            const summaryRows = db.prepare(
                 'SELECT id, embedding FROM chunk_summaries WHERE embedding IS NOT NULL'
             ).all() as any[];
 
             if (summaryRows.length > 0) {
-                const insert = this.db.prepare(
+                const insert = db.prepare(
                     'INSERT OR IGNORE INTO vec_summaries(summary_id, embedding) VALUES (?, ?)'
                 );
-                const migrateAll = this.db.transaction(() => {
+                const migrateAll = db.transaction(() => {
                     for (const row of summaryRows) {
                         try {
                             insert.run(row.id, row.embedding);
                         } catch (err) {
-                            this.db.prepare('UPDATE chunk_summaries SET embedding = NULL WHERE id = ?').run(row.id);
+                            db.prepare('UPDATE chunk_summaries SET embedding = NULL WHERE id = ?').run(row.id);
                         }
                     }
                 });
@@ -969,8 +980,8 @@ export class DatabaseManager {
         }
 
         const insertMeeting = this.db.prepare(`
-            INSERT OR REPLACE INTO meetings (id, title, start_time, duration_ms, summary_json, created_at, calendar_event_id, source, is_processed)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO meetings (id, title, start_time, duration_ms, summary_json, created_at, calendar_event_id, source, is_processed, token_usage_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         const insertTranscript = this.db.prepare(`
@@ -990,6 +1001,7 @@ export class DatabaseManager {
 
         const runTransaction = this.db.transaction(() => {
             // 1. Insert Meeting
+            const tokenUsageJson = meeting.tokenUsage ? JSON.stringify(meeting.tokenUsage) : null;
             insertMeeting.run(
                 meeting.id,
                 meeting.title,
@@ -999,7 +1011,8 @@ export class DatabaseManager {
                 meeting.date, // Using the ISO string as created_at for sorting simply
                 meeting.calendarEventId || null,
                 meeting.source || 'manual',
-                meeting.isProcessed ? 1 : 0
+                meeting.isProcessed ? 1 : 0,
+                tokenUsageJson
             );
 
             // 2. Insert Transcript
@@ -1196,6 +1209,13 @@ export class DatabaseManager {
             };
         });
 
+        let tokenUsage: any = null;
+        if (meetingRow.token_usage_json) {
+            try { tokenUsage = JSON.parse(meetingRow.token_usage_json); } catch (e) {
+                console.warn('[DatabaseManager] Failed to parse token_usage_json for meeting:', meetingRow.id, e);
+            }
+        }
+
         return {
             id: meetingRow.id,
             title: meetingRow.title,
@@ -1206,7 +1226,8 @@ export class DatabaseManager {
             calendarEventId: meetingRow.calendar_event_id,
             source: meetingRow.source,
             transcript: transcript,
-            usage: usage
+            usage: usage,
+            tokenUsage: tokenUsage
         };
     }
 

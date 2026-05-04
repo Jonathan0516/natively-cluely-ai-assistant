@@ -2257,6 +2257,26 @@ export function initializeIpcHandlers(appState: AppState): void {
     }
   });
 
+  safeHandle("generate-system-design", async (_, imagePaths?: string[], problemStatement?: string) => {
+    try {
+      const resolvedImagePaths: string[] =
+        imagePaths && imagePaths.length > 0
+          ? imagePaths
+          : appState.getScreenshotQueue();
+
+      console.log(`[IPC] generate-system-design: using ${resolvedImagePaths.length} image(s) (${imagePaths?.length ? 'explicit' : 'queue fallback'})`);
+
+      const intelligenceManager = appState.getIntelligenceManager();
+      const diagram = await intelligenceManager.runSystemDesign(
+        resolvedImagePaths.length > 0 ? resolvedImagePaths : undefined,
+        problemStatement
+      );
+      return { diagram };
+    } catch (error: any) {
+      throw error;
+    }
+  });
+
   // Dynamic Action Button Mode (Recap vs Brainstorm)
   safeHandle("get-action-button-mode", () => {
     const { SettingsManager } = require('./services/SettingsManager');
@@ -2698,18 +2718,13 @@ export function initializeIpcHandlers(appState: AppState): void {
 
   safeHandle("profile:upload-resume", async (_, filePath: string) => {
     try {
-      // Premium gate: require active license or free trial for profile features
-      if (!isProOrTrialActive()) {
-        return { success: false, error: 'Pro license required. Please activate a license key to use Profile Intelligence features.' };
-      }
       console.log(`[IPC] profile:upload-resume called with: ${filePath}`);
-      const orchestrator = appState.getKnowledgeOrchestrator();
-      if (!orchestrator) {
-        return { success: false, error: 'Knowledge engine not initialized. Please ensure API keys are configured.' };
+      const pm = appState.getProfileManager();
+      const llmHelper = appState.processingHelper?.getLLMHelper?.();
+      if (!pm || !llmHelper) {
+        return { success: false, error: 'Profile manager not ready. Please ensure an API key is configured.' };
       }
-      const { DocType } = require('../premium/electron/knowledge/types');
-      const result = await orchestrator.ingestDocument(filePath, DocType.RESUME);
-      return result;
+      return await pm.ingestResume(filePath, llmHelper);
     } catch (error: any) {
       console.error('[IPC] profile:upload-resume error:', error);
       return { success: false, error: error.message };
@@ -2718,19 +2733,9 @@ export function initializeIpcHandlers(appState: AppState): void {
 
   safeHandle("profile:get-status", async () => {
     try {
-      const orchestrator = appState.getKnowledgeOrchestrator();
-      if (!orchestrator) {
-        return { hasProfile: false, profileMode: false };
-      }
-      // Map new KnowledgeStatus back to legacy UI shape temporarily
-      const status = orchestrator.getStatus();
-      return {
-        hasProfile: status.hasResume,
-        profileMode: status.activeMode,
-        name: status.resumeSummary?.name,
-        role: status.resumeSummary?.role,
-        totalExperienceYears: status.resumeSummary?.totalExperienceYears
-      };
+      const pm = appState.getProfileManager();
+      if (!pm) return { hasProfile: false, profileMode: false };
+      return pm.getStatus();
     } catch (error: any) {
       return { hasProfile: false, profileMode: false };
     }
@@ -2738,15 +2743,9 @@ export function initializeIpcHandlers(appState: AppState): void {
 
   safeHandle("profile:set-mode", async (_, enabled: boolean) => {
     try {
-      // Premium gate: only allow enabling profile mode with active license or free trial
-      if (enabled && !isProOrTrialActive()) {
-        return { success: false, error: 'Pro license required. Please activate a license key to use Profile Intelligence features.' };
-      }
-      const orchestrator = appState.getKnowledgeOrchestrator();
-      if (!orchestrator) {
-        return { success: false, error: 'Knowledge engine not initialized' };
-      }
-      orchestrator.setKnowledgeMode(enabled);
+      const pm = appState.getProfileManager();
+      if (!pm) return { success: false, error: 'Profile manager not ready' };
+      pm.setMode(enabled);
 
       const { SettingsManager } = require('./services/SettingsManager');
       SettingsManager.getInstance().set('knowledgeMode', enabled);
@@ -2759,12 +2758,9 @@ export function initializeIpcHandlers(appState: AppState): void {
 
   safeHandle("profile:delete", async () => {
     try {
-      const orchestrator = appState.getKnowledgeOrchestrator();
-      if (!orchestrator) {
-        return { success: false, error: 'Knowledge engine not initialized' };
-      }
-      const { DocType } = require('../premium/electron/knowledge/types');
-      orchestrator.deleteDocumentsByType(DocType.RESUME);
+      const pm = appState.getProfileManager();
+      if (!pm) return { success: false, error: 'Profile manager not ready' };
+      pm.deleteResume();
       return { success: true };
     } catch (error: any) {
       return { success: false, error: error.message };
@@ -2773,9 +2769,9 @@ export function initializeIpcHandlers(appState: AppState): void {
 
   safeHandle("profile:get-profile", async () => {
     try {
-      const orchestrator = appState.getKnowledgeOrchestrator();
-      if (!orchestrator) return null;
-      return orchestrator.getProfileData();
+      const pm = appState.getProfileManager();
+      if (!pm) return null;
+      return pm.getProfileData();
     } catch (error: any) {
       return null;
     }
@@ -2806,32 +2802,38 @@ export function initializeIpcHandlers(appState: AppState): void {
 
   safeHandle("profile:upload-jd", async (_, filePath: string) => {
     try {
-      // Premium gate
-      if (!isProOrTrialActive()) {
-        return { success: false, error: 'Pro license required. Please activate a license key to use Profile Intelligence features.' };
-      }
       console.log(`[IPC] profile:upload-jd called with: ${filePath}`);
-      const orchestrator = appState.getKnowledgeOrchestrator();
-      if (!orchestrator) {
-        return { success: false, error: 'Knowledge engine not initialized. Please ensure API keys are configured.' };
+      const pm = appState.getProfileManager();
+      const llmHelper = appState.processingHelper?.getLLMHelper?.();
+      if (!pm || !llmHelper) {
+        return { success: false, error: 'Profile manager not ready. Please ensure an API key is configured.' };
       }
-      const { DocType } = require('../premium/electron/knowledge/types');
-      const result = await orchestrator.ingestDocument(filePath, DocType.JD);
-      return result;
+      return await pm.ingestJD(filePath, llmHelper);
     } catch (error: any) {
       console.error('[IPC] profile:upload-jd error:', error);
       return { success: false, error: error.message };
     }
   });
 
+  safeHandle("profile:upload-jd-text", async (_, text: string) => {
+    try {
+      const pm = appState.getProfileManager();
+      const llmHelper = appState.processingHelper?.getLLMHelper?.();
+      if (!pm || !llmHelper) {
+        return { success: false, error: 'Profile manager not ready. Please ensure an API key is configured.' };
+      }
+      return await pm.ingestJDFromText(text, llmHelper);
+    } catch (error: any) {
+      console.error('[IPC] profile:upload-jd-text error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   safeHandle("profile:delete-jd", async () => {
     try {
-      const orchestrator = appState.getKnowledgeOrchestrator();
-      if (!orchestrator) {
-        return { success: false, error: 'Knowledge engine not initialized' };
-      }
-      const { DocType } = require('../premium/electron/knowledge/types');
-      orchestrator.deleteDocumentsByType(DocType.JD);
+      const pm = appState.getProfileManager();
+      if (!pm) return { success: false, error: 'Profile manager not ready' };
+      pm.deleteJD();
       return { success: true };
     } catch (error: any) {
       return { success: false, error: error.message };
@@ -2840,37 +2842,24 @@ export function initializeIpcHandlers(appState: AppState): void {
 
   safeHandle("profile:research-company", async (_, companyName: string) => {
     try {
-      // Premium gate
-      if (!isProOrTrialActive()) {
-        return { success: false, error: 'Pro license required. Please activate a license key to use Profile Intelligence features.' };
+      const llmHelper = appState.processingHelper?.getLLMHelper?.();
+      if (!llmHelper) {
+        return { success: false, error: 'LLM not ready' };
       }
-      const orchestrator = appState.getKnowledgeOrchestrator();
-      if (!orchestrator) {
-        return { success: false, error: 'Knowledge engine not initialized' };
-      }
-      const engine = orchestrator.getCompanyResearchEngine();
+      const { CompanyResearchEngine } = require('./services/CompanyResearchEngine');
+      const { TavilyClient } = require('./services/TavilyClient');
+      const engine = new CompanyResearchEngine(llmHelper);
 
-      // Wire search provider: Tavily (user key) → Natively API (fallback) → none (LLM-only)
       const { CredentialsManager } = require('./services/CredentialsManager');
-      const cm = CredentialsManager.getInstance();
-      const tavilyApiKey = cm.getTavilyApiKey();
+      const tavilyApiKey = CredentialsManager.getInstance().getTavilyApiKey();
       if (tavilyApiKey) {
-        const { TavilySearchProvider } = require('../premium/electron/knowledge/TavilySearchProvider');
-        engine.setSearchProvider(new TavilySearchProvider(tavilyApiKey));
+        engine.setSearchProvider(new TavilyClient(tavilyApiKey));
       } else {
-        const nativelyKey = cm.getNativelyApiKey();
-        if (nativelyKey) {
-          const { NativelySearchProvider } = require('../premium/electron/knowledge/NativelySearchProvider');
-          // Pass the real trial token when key is the __trial__ sentinel so the
-          // server can authenticate via x-trial-token instead of the invalid key.
-          const trialToken = nativelyKey === '__trial__' ? cm.getTrialToken() : undefined;
-          engine.setSearchProvider(new NativelySearchProvider(nativelyKey, trialToken ?? undefined));
-          console.log('[IPC] Company research: using Natively API search (no Tavily key configured)');
-        }
+        console.log('[IPC] Company research: no Tavily key — using LLM-only fallback');
       }
 
-      // Build full JD context so the dossier is tailored to the exact role
-      const profileData = orchestrator.getProfileData();
+      const pm = appState.getProfileManager();
+      const profileData = pm?.getProfileData?.();
       const activeJD = profileData?.activeJD;
       const jdCtx = activeJD ? {
         title: activeJD.title,

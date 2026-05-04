@@ -19,6 +19,7 @@
 import { EventEmitter } from 'events';
 import WebSocket from 'ws';
 import { RECOGNITION_LANGUAGES } from '../config/languages';
+import { TokenUsageTracker } from '../services/TokenUsageTracker';
 
 const SONIOX_WEBSOCKET_URL = 'wss://stt-rt.soniox.com/transcribe-websocket';
 const RECONNECT_BASE_DELAY_MS = 1000;
@@ -158,6 +159,8 @@ export class SonioxStreamingSTT extends EventEmitter {
         }
 
         this.ws.send(chunk);
+        const seconds = chunk.length / (this.sampleRate * 2 * this.numChannels);
+        try { TokenUsageTracker.recordSTT('soniox', seconds); } catch {}
     }
 
     public finalize(): void {

@@ -356,6 +356,7 @@ export class AppState {
           actionId === 'chat:answer' ||
           actionId === 'chat:codeHint' ||
           actionId === 'chat:brainstorm' ||
+          actionId === 'chat:systemDesign' ||
           actionId === 'chat:dynamicAction4' ||
           actionId === 'chat:scrollUp' ||
           actionId === 'chat:scrollDown'
@@ -367,6 +368,7 @@ export class AppState {
             'chat:answer': 'answer',
             'chat:codeHint': 'codeHint',
             'chat:brainstorm': 'brainstorm',
+            'chat:systemDesign': 'systemDesign',
             'chat:dynamicAction4': 'dynamicAction4',
             'chat:scrollUp': 'scrollUp',
             'chat:scrollDown': 'scrollDown',
@@ -506,6 +508,19 @@ export class AppState {
     try {
       const db = DatabaseManager.getInstance();
       const sqliteDb = db.getDb();
+
+      // Wire ProfileManager (lightweight resume + JD path, no premium gate)
+      try {
+        const { ProfileManager } = require('./services/ProfileManager');
+        const pm = ProfileManager.getInstance();
+        const llmHelper = this.processingHelper.getLLMHelper();
+        if (llmHelper?.setProfileManager) {
+          llmHelper.setProfileManager(pm);
+        }
+        console.log('[AppState] ProfileManager initialized');
+      } catch (e: any) {
+        console.error('[AppState] Failed to initialize ProfileManager:', e?.message);
+      }
 
       if (sqliteDb && KnowledgeDatabaseManagerClass && KnowledgeOrchestratorClass) {
         const knowledgeDb = new KnowledgeDatabaseManagerClass(sqliteDb);
@@ -1711,6 +1726,15 @@ export class AppState {
 
   public getKnowledgeOrchestrator(): any {
     return this.knowledgeOrchestrator;
+  }
+
+  public getProfileManager(): any {
+    try {
+      const { ProfileManager } = require('./services/ProfileManager');
+      return ProfileManager.getInstance();
+    } catch {
+      return null;
+    }
   }
 
   public getView(): "queue" | "solutions" {

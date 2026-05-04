@@ -17,6 +17,7 @@ import WebSocket from 'ws';
 import axios from 'axios';
 import FormData from 'form-data';
 import { RECOGNITION_LANGUAGES } from '../config/languages';
+import { TokenUsageTracker } from '../services/TokenUsageTracker';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -515,6 +516,8 @@ export class OpenAIStreamingSTT extends EventEmitter {
                     type:  'input_audio_buffer.append',
                     audio: base64,
                 }));
+                const seconds = combined.length / WS_SAMPLE_RATE;
+                try { TokenUsageTracker.recordSTT('whisper', seconds); } catch {}
             } catch (err) {
                 console.warn('[OpenAIStreaming] WS send failed:', err);
             }
@@ -696,6 +699,8 @@ export class OpenAIStreamingSTT extends EventEmitter {
 
         try {
             const transcript = await this._restUpload(wavBuffer);
+            const seconds = pcm16k.length / (REST_SAMPLE_RATE * 2);
+            try { TokenUsageTracker.recordSTT('whisper', seconds); } catch {}
             if (transcript && transcript.trim().length > 0) {
                 console.log(`[OpenAIStreaming][REST] Transcript: "${transcript.substring(0, 60)}"`);
                 this.emit('transcript', {

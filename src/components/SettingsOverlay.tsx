@@ -415,10 +415,10 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose, init
     const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false);
     const [isPremium, setIsPremium] = useState(false);
     const [premiumPlan, setPremiumPlan] = useState<string>('');
-    // Trial users get the same profile access as premium users for the duration of the trial
-    const hasProfileAccess = isPremium || isTrialActive;
     const [jdUploading, setJdUploading] = useState(false);
     const [jdError, setJdError] = useState('');
+    const [jdText, setJdText] = useState('');
+    const [jdInputMode, setJdInputMode] = useState<'paste' | 'file'>('paste');
     const [companyResearching, setCompanyResearching] = useState(false);
     const [companyDossier, setCompanyDossier] = useState<any>(null);
     const [companySearchQuotaExhausted, setCompanySearchQuotaExhausted] = useState(false);
@@ -1921,11 +1921,11 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose, init
                                                         )}
 
                                                         {/* High-fidelity Toggle */}
-                                                        <div className={`flex items-center gap-2 bg-bg-input px-3 py-1.5 rounded-full border border-border-subtle ${!hasProfileAccess ? 'opacity-40 cursor-not-allowed' : ''}`} title={!hasProfileAccess ? 'Requires Pro license' : ''}>
+                                                        <div className={`flex items-center gap-2 bg-bg-input px-3 py-1.5 rounded-full border border-border-subtle ${!profileStatus.hasProfile ? 'opacity-40 cursor-not-allowed' : ''}`} title={!profileStatus.hasProfile ? 'Upload a resume to enable Persona Engine' : ''}>
                                                             <span className="text-xs font-medium text-text-secondary">Persona Engine</span>
                                                             <div
                                                                 onClick={async () => {
-                                                                    if (!profileStatus.hasProfile || !hasProfileAccess) return;
+                                                                    if (!profileStatus.hasProfile) return;
                                                                     const newState = !profileStatus.profileMode;
                                                                     try {
                                                                         await window.electronAPI?.profileSetMode?.(newState);
@@ -1934,9 +1934,9 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose, init
                                                                         console.error('Failed to toggle profile mode:', e);
                                                                     }
                                                                 }}
-                                                                className={`w-9 h-5 rounded-full relative transition-colors ${(!profileStatus.hasProfile || !hasProfileAccess) ? 'opacity-40 cursor-not-allowed bg-bg-toggle-switch' : profileStatus.profileMode ? 'bg-accent-primary' : 'bg-bg-toggle-switch border border-border-muted'}`}
+                                                                className={`w-9 h-5 rounded-full relative transition-colors ${!profileStatus.hasProfile ? 'opacity-40 cursor-not-allowed bg-bg-toggle-switch' : profileStatus.profileMode ? 'bg-accent-primary' : 'bg-bg-toggle-switch border border-border-muted'}`}
                                                             >
-                                                                <div className={`absolute top-1 left-1 w-3 h-3 rounded-full bg-white transition-transform ${profileStatus.profileMode && hasProfileAccess ? 'translate-x-4' : 'translate-x-0'}`} />
+                                                                <div className={`absolute top-1 left-1 w-3 h-3 rounded-full bg-white transition-transform ${profileStatus.profileMode ? 'translate-x-4' : 'translate-x-0'}`} />
                                                             </div>
                                                         </div>
                                                     </div>
@@ -2100,46 +2100,120 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose, init
 
                                                 <div className="flex items-center gap-2 shrink-0">
                                                     {profileData?.hasActiveJD && (
-                                                        <button
-                                                            onClick={async () => {
-                                                                await window.electronAPI?.profileDeleteJD?.();
-                                                                const data = await window.electronAPI?.profileGetProfile?.();
-                                                                if (data) setProfileData(data);
-                                                                setCompanyDossier(null);
-                                                            }}
-                                                            className="px-2.5 py-2 rounded-full text-xs text-text-tertiary hover:text-red-500 hover:bg-red-500/10 transition-all border border-transparent hover:border-red-500/20"
-                                                        >
-                                                            <Trash2 size={14} />
-                                                        </button>
-                                                    )}
-                                                    <button
-                                                        onClick={async () => {
-                                                            setJdError('');
-                                                            try {
-                                                                const fileResult = await window.electronAPI?.profileSelectFile?.();
-                                                                if (fileResult?.cancelled || !fileResult?.filePath) return;
-
-                                                                setJdUploading(true);
-                                                                const result = await window.electronAPI?.profileUploadJD?.(fileResult.filePath);
-                                                                if (result?.success) {
+                                                        <>
+                                                            <button
+                                                                onClick={async () => {
+                                                                    await window.electronAPI?.profileDeleteJD?.();
                                                                     const data = await window.electronAPI?.profileGetProfile?.();
                                                                     if (data) setProfileData(data);
-                                                                } else {
-                                                                    setJdError(result?.error || 'JD upload failed');
-                                                                }
-                                                            } catch (e: any) {
-                                                                setJdError(e.message || 'JD upload failed');
-                                                            } finally {
-                                                                setJdUploading(false);
-                                                            }
-                                                        }}
-                                                        disabled={jdUploading}
-                                                        className={`px-4 py-2 rounded-full text-xs font-medium transition-all whitespace-nowrap shrink-0 ${jdUploading ? 'bg-bg-input text-text-tertiary cursor-wait border border-border-subtle' : 'bg-blue-600 text-white hover:bg-blue-500 shadow-sm'}`}
-                                                    >
-                                                        {jdUploading ? 'Parsing...' : profileData?.hasActiveJD ? 'Replace JD' : 'Upload JD'}
-                                                    </button>
+                                                                    setCompanyDossier(null);
+                                                                    setJdText('');
+                                                                }}
+                                                                className="px-2.5 py-2 rounded-full text-xs text-text-tertiary hover:text-red-500 hover:bg-red-500/10 transition-all border border-transparent hover:border-red-500/20"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    // Re-open the paste view to replace the active JD
+                                                                    setProfileData((prev: any) => prev ? { ...prev, hasActiveJD: false, activeJD: null } : prev);
+                                                                    setJdText('');
+                                                                    setJdInputMode('paste');
+                                                                }}
+                                                                className="px-3 py-2 rounded-full text-xs font-medium bg-bg-input text-text-secondary hover:text-text-primary border border-border-subtle transition-all"
+                                                            >
+                                                                Replace
+                                                            </button>
+                                                        </>
+                                                    )}
                                                 </div>
                                             </div>
+
+                                            {/* Paste / Upload area — shown when no active JD and not currently parsing */}
+                                            {!profileData?.hasActiveJD && !jdUploading && (
+                                                <div className="px-5 pb-4 space-y-2">
+                                                    <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-text-tertiary">
+                                                        <span>{jdInputMode === 'paste' ? 'Paste JD text' : 'Upload JD file'}</span>
+                                                        <button
+                                                            onClick={() => setJdInputMode(jdInputMode === 'paste' ? 'file' : 'paste')}
+                                                            className="text-blue-500 hover:text-blue-400 normal-case tracking-normal text-[11px]"
+                                                        >
+                                                            {jdInputMode === 'paste' ? 'or upload PDF/DOCX →' : '← paste text instead'}
+                                                        </button>
+                                                    </div>
+
+                                                    {jdInputMode === 'paste' ? (
+                                                        <>
+                                                            <textarea
+                                                                value={jdText}
+                                                                onChange={(e) => setJdText(e.target.value)}
+                                                                placeholder="Paste the full job description here…"
+                                                                rows={6}
+                                                                className="w-full px-3 py-2 text-xs bg-bg-input border border-border-subtle rounded-lg text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-blue-500/50 resize-y"
+                                                                disabled={jdUploading}
+                                                            />
+                                                            <div className="flex items-center justify-between">
+                                                                <span className="text-[10px] text-text-tertiary">{jdText.trim().length} chars</span>
+                                                                <button
+                                                                    onClick={async () => {
+                                                                        setJdError('');
+                                                                        const text = jdText.trim();
+                                                                        if (text.length < 30) {
+                                                                            setJdError('Paste at least a few sentences of the JD.');
+                                                                            return;
+                                                                        }
+                                                                        try {
+                                                                            setJdUploading(true);
+                                                                            const result = await window.electronAPI?.profileUploadJDText?.(text);
+                                                                            if (result?.success) {
+                                                                                const data = await window.electronAPI?.profileGetProfile?.();
+                                                                                if (data) setProfileData(data);
+                                                                                setJdText('');
+                                                                            } else {
+                                                                                setJdError(result?.error || 'JD parse failed');
+                                                                            }
+                                                                        } catch (e: any) {
+                                                                            setJdError(e.message || 'JD parse failed');
+                                                                        } finally {
+                                                                            setJdUploading(false);
+                                                                        }
+                                                                    }}
+                                                                    disabled={jdUploading || jdText.trim().length < 30}
+                                                                    className={`px-4 py-2 rounded-full text-xs font-medium transition-all ${(jdUploading || jdText.trim().length < 30) ? 'bg-bg-input text-text-tertiary cursor-not-allowed border border-border-subtle' : 'bg-blue-600 text-white hover:bg-blue-500 shadow-sm'}`}
+                                                                >
+                                                                    Save JD
+                                                                </button>
+                                                            </div>
+                                                        </>
+                                                    ) : (
+                                                        <button
+                                                            onClick={async () => {
+                                                                setJdError('');
+                                                                try {
+                                                                    const fileResult = await window.electronAPI?.profileSelectFile?.();
+                                                                    if (fileResult?.cancelled || !fileResult?.filePath) return;
+                                                                    setJdUploading(true);
+                                                                    const result = await window.electronAPI?.profileUploadJD?.(fileResult.filePath);
+                                                                    if (result?.success) {
+                                                                        const data = await window.electronAPI?.profileGetProfile?.();
+                                                                        if (data) setProfileData(data);
+                                                                    } else {
+                                                                        setJdError(result?.error || 'JD upload failed');
+                                                                    }
+                                                                } catch (e: any) {
+                                                                    setJdError(e.message || 'JD upload failed');
+                                                                } finally {
+                                                                    setJdUploading(false);
+                                                                }
+                                                            }}
+                                                            disabled={jdUploading}
+                                                            className="w-full px-4 py-3 rounded-lg text-xs font-medium border border-dashed border-border-subtle text-text-secondary hover:text-text-primary hover:border-blue-500/50 transition-all"
+                                                        >
+                                                            Select PDF / DOCX / TXT
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
 
                                             {jdError && (
                                                 <div className="px-5 pb-4">
@@ -3408,8 +3482,6 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose, init
                 }}
                 onDeactivated={() => {
                     setIsPremium(false);
-                    // Auto-disable profile mode in UI when license is removed
-                    setProfileStatus(prev => ({ ...prev, profileMode: false }));
                 }}
             />
 

@@ -6,6 +6,7 @@ import { SessionTracker, TranscriptSegment } from './SessionTracker';
 import { LLMHelper } from './LLMHelper';
 import { DatabaseManager, Meeting } from './db/DatabaseManager';
 import { GROQ_TITLE_PROMPT, GROQ_SUMMARY_JSON_PROMPT } from './llm';
+import { TokenUsageTracker, mergeTokenUsageSnapshots } from './services/TokenUsageTracker';
 const crypto = require('crypto');
 
 export class MeetingPersistence {
@@ -40,7 +41,7 @@ export class MeetingPersistence {
             usage: [...this.session.getFullUsage()],
             startTime: this.session.getSessionStartTime(),
             durationMs: durationMs,
-            context: this.session.getFullSessionContext()
+            context: this.session.getFullSessionContext(),
         };
 
         // BUG-04 fix: snapshot metadata BEFORE reset() clears it so the
@@ -88,7 +89,7 @@ export class MeetingPersistence {
      * Heavy lifting: LLM Title, Summary, and DB Write
      */
     private async processAndSaveMeeting(
-        data: { transcript: TranscriptSegment[], usage: any[], startTime: number, durationMs: number, context: string },
+        data: { transcript: TranscriptSegment[], usage: any[], startTime: number, durationMs: number, context: string, priorTokenUsage?: any },
         meetingId: string,
         // BUG-04 fix: accept metadata snapshot so calendar info is not lost after session.reset()
         metadata?: { title?: string; calendarEventId?: string; source?: 'manual' | 'calendar' } | null
@@ -249,6 +250,17 @@ Return ONLY valid JSON (no markdown code blocks):
             const seconds = ((data.durationMs % 60000) / 1000).toFixed(0);
             const durationStr = `${minutes}:${Number(seconds) < 10 ? '0' : ''}${seconds}`;
 
+            // Take a final snapshot AFTER summary generation so post-meeting LLM costs
+            // (title + structured notes) are attributed to this meeting too.
+            // In normal flow: tracker holds in-meeting + post-meeting tokens (session.reset()
+            // does NOT clear it), so this snapshot is comprehensive.
+            // In recovery flow: priorTokenUsage holds the placeholder's saved usage, and
+            // the tracker only has post-recovery tokens — merge them.
+            const sessionSnapshot = TokenUsageTracker.snapshot();
+            const finalTokenUsage = data.priorTokenUsage
+                ? mergeTokenUsageSnapshots(data.priorTokenUsage, sessionSnapshot)
+                : sessionSnapshot;
+
             const meetingData: Meeting = {
                 id: meetingId,
                 title: title,
@@ -258,12 +270,16 @@ Return ONLY valid JSON (no markdown code blocks):
                 detailedSummary: summaryData,
                 transcript: data.transcript,
                 usage: data.usage,
+                tokenUsage: finalTokenUsage,
                 calendarEventId: calendarEventId,
                 source: source,
                 isProcessed: true
             };
 
             DatabaseManager.getInstance().saveMeeting(meetingData, data.startTime, data.durationMs);
+
+            // Reset the global tracker now that this meeting's tokens are persisted.
+            TokenUsageTracker.reset();
 
             // Metadata was already snapshotted before session.reset() — nothing to clear here.
 
@@ -311,12 +327,16 @@ Return ONLY valid JSON (no markdown code blocks):
                 const durationMs = ((mins * 60) + secs) * 1000;
                 const startTime = new Date(details.date).getTime();
 
+                // Reset tracker so post-recovery summary tokens don't bleed into next meeting.
+                TokenUsageTracker.reset();
+
                 const snapshot = {
                     transcript: details.transcript as TranscriptSegment[],
                     usage: details.usage,
                     startTime: startTime,
                     durationMs: durationMs,
-                    context: context
+                    context: context,
+                    priorTokenUsage: (details as any).tokenUsage,
                 };
 
                 await this.processAndSaveMeeting(snapshot, m.id);
