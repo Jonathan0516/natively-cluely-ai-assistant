@@ -217,6 +217,9 @@ planning/live-negotiation/temp/
 test-*.js
 test_*.js
 test_*.py
+# but DO track the backend test suite (real, version-controlled tests)
+!backend/tests/
+!backend/tests/test_*.py
 qa-report.json
 templog*.txt
 dodollm.txt
