@@ -14,6 +14,7 @@ from .services.llm_gateway import LLMGateway
 from .services.model_catalog import CATALOG, PLANS
 from .services.providers.openai_compat import OpenAICompatProvider
 from .services.rate_limiter import InMemoryRateLimiter, RateLimiter
+from .services.stt_relay import WebsocketsDeepgramUpstream
 from .services.usage_meter import UsageMeter
 from .services.usage_repo import InMemoryUsageRepo, SupabaseUsageRepo, UsageRepo
 from .services.user_repo import InMemoryUserRepo, SupabaseUserRepo, User, UserRepo
@@ -124,7 +125,9 @@ class _OpenAICompatRouter:
     def __init__(self, http: httpx.AsyncClient, settings):
         self._http = http
         self._settings = settings
-        self._by_upstream = {s.upstream_model: s for s in CATALOG.values()}
+        self._by_upstream = {
+            s.upstream_model: s for s in CATALOG.values() if s.provider == "openai_compat"
+        }
 
     def _provider_for(self, upstream_model: str) -> OpenAICompatProvider:
         spec = self._by_upstream[upstream_model]
@@ -150,3 +153,12 @@ def get_llm_gateway() -> LLMGateway:
     # build a single dispatching provider that picks base_url+key per upstream model.
     provider = _OpenAICompatRouter(http, settings)
     return LLMGateway(CATALOG, {"openai_compat": provider})
+
+
+@lru_cache
+def get_stt_upstream() -> WebsocketsDeepgramUpstream:
+    settings = get_settings()
+    return WebsocketsDeepgramUpstream(
+        api_key=settings.deepgram_api_key,
+        base_url="wss://api.deepgram.com/v1/listen",
+    )
