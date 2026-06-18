@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from ..deps import get_current_user, get_llm_gateway, get_usage_meter
 from ..services.llm_gateway import LLMGateway
 from ..services.llm_types import ChatMessage, NoModelAvailable, QuotaExceeded
+from ..services.model_catalog import CATALOG
 from ..services.usage_meter import UsageMeter
 from ..services.user_repo import User
 
@@ -108,3 +109,33 @@ async def llm_chat(
             yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.get("/models")
+async def llm_models(
+    user: Annotated[User, Depends(get_current_user)],
+    meter: Annotated[UsageMeter, Depends(get_usage_meter)],
+) -> list[dict]:
+    status_ = await meter.status(user.id)
+    allowed = set(meter.plan_allowed_tiers(status_.plan))
+    return [
+        {
+            "id": s.id, "label": s.label, "tier": s.tier,
+            "capabilities": list(s.capabilities),
+            "available": s.tier in allowed,
+        }
+        for s in CATALOG.values()
+    ]
+
+
+@router.get("/quota")
+async def llm_quota(
+    user: Annotated[User, Depends(get_current_user)],
+    meter: Annotated[UsageMeter, Depends(get_usage_meter)],
+) -> dict:
+    s = await meter.status(user.id)
+    return {
+        "plan": s.plan, "period_start": s.period_start, "period_end": s.period_end,
+        "credits_total": s.credits_total, "credits_used": s.credits_used,
+        "credits_remaining": s.credits_remaining,
+    }
