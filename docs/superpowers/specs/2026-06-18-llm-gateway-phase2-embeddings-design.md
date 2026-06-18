@@ -26,7 +26,7 @@
 |---|---|
 | 平台 provider | 全部 Gemini(OpenAI 兼容端点) |
 | 聊天模型 | `answer-fast`(free)→ `gemini-3.1-flash-lite`;`answer-pro`(pro)→ `gemini-3.1-pro-preview`(与客户端现用模型一致);下线 `answer-netmind` |
-| embedding 模型 | `text-embedding-004` @ **768 维**(原生 768,无需 dimensions 参数) |
+| embedding 模型 | `gemini-embedding-001` @ **768 维**(请求带 `dimensions=768`;`text-embedding-004` 在该 Gemini 账号/兼容端点不可用,联机已验证) |
 | embedding 计量 | `kind="embeddings"`,按 input token 换算 credits(低单价) |
 | 存储/检索 | **不动** 现有 `/embeddings/*`(chunks/summary/search),后端检索已按 `dim` 过滤 |
 | 历史数据 | 现有 3 条测试 chunk 为 384 维(本地 MiniLM),切换后成孤儿(检索按 dim 过滤,不报错、不返回);可选一次性清理,非必须 |
@@ -44,7 +44,7 @@ GEMINI_OPENAI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
 - `answer-fast`(tier=free)→ `upstream_model="gemini-3.1-flash-lite"`, `base_url=GEMINI_OPENAI_BASE`, `key_env="gemini_api_key"`, fallbacks=`("answer-pro",)`
 - `answer-pro`(tier=pro)→ `upstream_model="gemini-3.1-pro-preview"`, 同 base/key,capabilities 含 vision
 - 删除 `answer-netmind`
-- 新增 embedding spec:`embed-default`(tier=free)→ `upstream_model="text-embedding-004"`, `base_url=GEMINI_OPENAI_BASE`, `key_env="gemini_api_key"`, `capabilities=("embedding",)`, dim=768,低 credits 单价
+- 新增 embedding spec:`embed-default`(tier=free)→ `upstream_model="gemini-embedding-001"`, `base_url=GEMINI_OPENAI_BASE`, `key_env="gemini_api_key"`, `capabilities=("embedding",)`, `embed_dim=768`(provider 请求带 `dimensions=768`),低 credits 单价。注:OpenAI 兼容 `/embeddings` 不返回 token usage,embedding 计量按 1 credit 下限。
 
 > 注:embedding spec 需要一个维度字段(`embed_dim: int = 768`)或沿用约定;`credits_for` 对 embedding 只按 input token 计。
 
