@@ -1,27 +1,27 @@
 /**
- * DeepgramStreamingSTT - SDK-based streaming Speech-to-Text using Deepgram Nova-3
- *
- * Uses @deepgram/sdk v3 (listen.live) instead of raw WebSocket.
- * Implements the same EventEmitter interface as GoogleSTT:
+ * DeepgramStreamingSTT — streams audio to the backend STT gateway (WS /llm/stt),
+ * which reverse-proxies Deepgram with the platform key and meters usage.
+ * Keeps the same interface as before:
  *   Events: 'transcript' ({ text, isFinal, confidence }), 'error' (Error)
- *   Methods: start(), stop(), write(chunk), setSampleRate(), setAudioChannelCount()
+ *   Methods: start(), stop(), write(chunk), setSampleRate(), setAudioChannelCount(),
+ *            setRecognitionLanguage(), setCredentials()
  */
-
 import { EventEmitter } from 'events';
+import WebSocket from 'ws';
 import { RECOGNITION_LANGUAGES } from '../config/languages';
-import { TokenUsageTracker } from '../services/TokenUsageTracker';
+import { CloudClient } from '../services/CloudClient';
 
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 30000;
 const RECONNECT_MAX_ATTEMPTS = 10;
-const KEEPALIVE_INTERVAL_MS = 8000;
+const STT_MODEL = 'nova-3';
 
 export class DeepgramStreamingSTT extends EventEmitter {
-    private apiKey: string;
-    private live: any = null;
+    private ws: WebSocket | null = null;
     private isActive = false;
-    private shouldReconnect = false;
-    private isOpen = false; // tracks whether SDK connection is in OPEN state
+    private isOpen = false;
+    private connecting = false;
+    private fatal = false; // auth/quota close — do not reconnect
 
     private sampleRate = 16000;
     private numChannels = 1;
@@ -29,49 +29,37 @@ export class DeepgramStreamingSTT extends EventEmitter {
 
     private reconnectAttempts = 0;
     private reconnectTimer: NodeJS.Timeout | null = null;
-    private keepAliveInterval: NodeJS.Timeout | null = null;
     private buffer: Buffer[] = [];
-    private isConnecting = false;
-
-    constructor(apiKey: string) {
-        super();
-        this.apiKey = apiKey;
-    }
 
     public setSampleRate(rate: number): void {
         if (this.sampleRate === rate) return;
         this.sampleRate = rate;
-        console.log(`[DeepgramStreaming] Sample rate set to ${rate}`);
-        if (this.isActive) this.restartStream();
+        if (this.isActive) this.restart();
     }
 
     public setAudioChannelCount(count: number): void {
         if (this.numChannels === count) return;
         this.numChannels = count;
-        console.log(`[DeepgramStreaming] Channel count set to ${count}`);
-        if (this.isActive) this.restartStream();
+        if (this.isActive) this.restart();
     }
 
     public setRecognitionLanguage(key: string): void {
         if (key === 'auto') {
             if (this.languageCode === 'multi') return;
             this.languageCode = 'multi';
-            console.log('[DeepgramStreaming] Language set to multilingual (multi)');
-            if (this.isActive) this.restartStream();
+            if (this.isActive) this.restart();
             return;
         }
         const config = RECOGNITION_LANGUAGES[key];
         if (config && this.languageCode !== config.iso639) {
             this.languageCode = config.iso639;
-            console.log(`[DeepgramStreaming] Language set to ${this.languageCode}`);
-            if (this.isActive) this.restartStream();
+            if (this.isActive) this.restart();
         }
     }
 
     public setCredentials(_path: string): void { }
 
-    private restartStream(): void {
-        console.log('[DeepgramStreaming] Restarting due to config change...');
+    private restart(): void {
         this.stop();
         this.start();
     }
@@ -79,183 +67,112 @@ export class DeepgramStreamingSTT extends EventEmitter {
     public start(): void {
         if (this.isActive) return;
         this.isActive = true;
-        this.shouldReconnect = true;
+        this.fatal = false;
         this.reconnectAttempts = 0;
-        this.connect();
+        void this.connect();
     }
 
     public stop(): void {
-        this.shouldReconnect = false;
-        this.clearTimers();
-
-        if (this.live) {
-            try {
-                this.live.requestClose();
-            } catch {
-                // ignore errors during shutdown
-            }
-            this.live = null;
-        }
-
         this.isActive = false;
-        this.isConnecting = false;
+        if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+        if (this.ws) {
+            try { this.ws.close(1000); } catch { /* ignore */ }
+            this.ws = null;
+        }
         this.isOpen = false;
+        this.connecting = false;
         this.buffer = [];
-        console.log('[DeepgramStreaming] Stopped');
     }
 
     public write(chunk: Buffer): void {
         if (!this.isActive) return;
-
-        if (!this.isOpen) {
-            this.buffer.push(chunk);
-            if (this.buffer.length > 500) this.buffer.shift();
-
-            if (!this.isConnecting && this.shouldReconnect && !this.reconnectTimer) {
-                this.connect();
-            }
+        if (this.isOpen && this.ws) {
+            try { this.ws.send(chunk); } catch { /* ignore */ }
             return;
         }
-
-        try {
-            this.live.send(chunk);
-            const seconds = chunk.length / (this.sampleRate * 2 * this.numChannels);
-            try { TokenUsageTracker.recordSTT('deepgram', seconds); } catch {}
-        } catch (err: any) {
-            console.error('[DeepgramStreaming] Send error:', err?.message);
-        }
+        this.buffer.push(chunk);
+        if (this.buffer.length > 500) this.buffer.shift();
     }
 
-    private connect(): void {
-        if (this.isConnecting) return;
-        this.isConnecting = true;
-
-        console.log(`[DeepgramStreaming] Connecting (rate=${this.sampleRate}, ch=${this.numChannels}, lang=${this.languageCode})...`);
-
+    private async connect(): Promise<void> {
+        if (this.connecting || !this.isActive) return;
+        this.connecting = true;
         try {
-            const { createClient, LiveTranscriptionEvents } = require('@deepgram/sdk');
-
-            const deepgram = createClient(this.apiKey);
-
-            this.live = deepgram.listen.live({
-                model: 'nova-3',
-                language: this.languageCode,
-                smart_format: true,
-                interim_results: true,
+            const cloud = CloudClient.getInstance();
+            const token = await cloud.getAccessToken();
+            const qs = new URLSearchParams({
+                token,
+                sample_rate: String(this.sampleRate),
+                channels: String(this.numChannels),
                 encoding: 'linear16',
-                sample_rate: this.sampleRate,
-                channels: this.numChannels,
-                endpointing: 300,
-                utterance_end_ms: 1000,
-                vad_events: true,
+                model: STT_MODEL,
+                interim_results: 'true',
             });
+            if (this.languageCode && this.languageCode !== 'en') qs.set('language', this.languageCode);
 
-            this.live.on(LiveTranscriptionEvents.Open, () => {
-                this.isConnecting = false;
+            const ws = new WebSocket(`${cloud.wsBaseUrl}/llm/stt?${qs.toString()}`);
+            this.ws = ws;
+
+            ws.on('open', () => {
                 this.isOpen = true;
-                console.log('[DeepgramStreaming] Connected');
+                this.connecting = false;
+                this.reconnectAttempts = 0;
+                for (const c of this.buffer) { try { ws.send(c); } catch { /* ignore */ } }
+                this.buffer = [];
+            });
 
-                // Register Transcript inside Open per SDK README pattern
-                this.live.on(LiveTranscriptionEvents.Transcript, (data: any) => {
-                    try {
-                        const alt = data.channel?.alternatives?.[0];
-                        const transcript = alt?.transcript;
-                        const isFinal = data.is_final ?? false;
-                        console.log(`[DeepgramStreaming] Transcript event — isFinal=${isFinal}, text="${transcript ?? '(empty)'}"`);
-                        if (!transcript) return;
+            ws.on('message', (data: WebSocket.RawData) => {
+                try {
+                    const obj = JSON.parse(data.toString());
+                    if (obj && obj.text) {
                         this.emit('transcript', {
-                            text: transcript,
-                            isFinal,
-                            confidence: alt?.confidence ?? 1.0,
+                            text: obj.text,
+                            isFinal: !!obj.isFinal,
+                            confidence: typeof obj.confidence === 'number' ? obj.confidence : 0,
                         });
-                    } catch (err) {
-                        console.error('[DeepgramStreaming] Parse error:', err);
                     }
-                });
-
-                // Flush buffered audio
-                const buffered = this.buffer.splice(0);
-                for (const chunk of buffered) {
-                    try { this.live?.send(chunk); } catch { }
-                }
-                if (buffered.length > 0) {
-                    console.log(`[DeepgramStreaming] Flushed ${buffered.length} buffered chunks`);
-                }
-
-                // SDK keepAlive() every 8s prevents idle timeout (per Deepgram docs)
-                this.keepAliveInterval = setInterval(() => {
-                    if (this.isOpen) {
-                        try { this.live?.keepAlive(); } catch { }
-                    }
-                }, KEEPALIVE_INTERVAL_MS);
-
-                // Reset backoff only after 5s of stable connection
-                setTimeout(() => {
-                    if (this.isOpen) this.reconnectAttempts = 0;
-                }, 5000);
+                } catch { /* ignore non-JSON frames */ }
             });
 
-            this.live.on(LiveTranscriptionEvents.Error, (err: any) => {
-                console.error('[DeepgramStreaming] Error:', err);
-                this.emit('error', err instanceof Error ? err : new Error(String(err)));
-            });
+            ws.on('error', (err: Error) => { this.emit('error', err); });
 
-            this.live.on(LiveTranscriptionEvents.Close, (event: any) => {
-                const code = event?.code ?? 'unknown';
-                const reason = event?.reason || '(empty)';
-                console.log(`[DeepgramStreaming] Closed (code=${code}, reason=${reason})`);
-
+            ws.on('close', (code: number) => {
                 this.isOpen = false;
-                this.isConnecting = false;
-                this.clearTimers();
-
-                if (this.shouldReconnect && code !== 1000) {
-                    this.scheduleReconnect();
+                this.connecting = false;
+                this.ws = null;
+                if (code === 4401) {
+                    this.fatal = true;
+                    this.emit('error', new Error('STT auth failed — please sign in again'));
+                    return;
                 }
+                if (code === 4029) {
+                    this.fatal = true;
+                    this.emit('error', new Error('STT quota exhausted — please upgrade your plan'));
+                    return;
+                }
+                if (this.isActive && !this.fatal) this.scheduleReconnect();
             });
-
-        } catch (err: any) {
-            console.error('[DeepgramStreaming] Initialization error:', err?.message);
-            this.isConnecting = false;
-            if (this.shouldReconnect) this.scheduleReconnect();
+        } catch (err) {
+            this.connecting = false;
+            this.emit('error', err instanceof Error ? err : new Error(String(err)));
+            if (this.isActive && !this.fatal) this.scheduleReconnect();
         }
     }
 
     private scheduleReconnect(): void {
-        if (!this.shouldReconnect) return;
-
-        // Discard stale buffered audio — replaying seconds-old audio on reconnect
-        // overwhelms Deepgram's real-time endpoint and causes EPIPE storms.
-        this.buffer = [];
-
+        if (this.reconnectTimer) return;
         if (this.reconnectAttempts >= RECONNECT_MAX_ATTEMPTS) {
-            console.error(`[DeepgramStreaming] Max reconnect attempts reached — giving up`);
-            this.emit('error', new Error('DeepgramStreamingSTT: max reconnect attempts exceeded'));
+            this.emit('error', new Error('STT reconnect attempts exhausted'));
             return;
         }
-
         const delay = Math.min(
-            RECONNECT_BASE_DELAY_MS * Math.pow(2, this.reconnectAttempts),
-            RECONNECT_MAX_DELAY_MS
+            RECONNECT_BASE_DELAY_MS * 2 ** this.reconnectAttempts,
+            RECONNECT_MAX_DELAY_MS,
         );
         this.reconnectAttempts++;
-
-        console.log(`[DeepgramStreaming] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${RECONNECT_MAX_ATTEMPTS})...`);
-
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;
-            if (this.shouldReconnect) this.connect();
+            if (this.isActive) void this.connect();
         }, delay);
-    }
-
-    private clearTimers(): void {
-        if (this.reconnectTimer) {
-            clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = null;
-        }
-        if (this.keepAliveInterval) {
-            clearInterval(this.keepAliveInterval);
-            this.keepAliveInterval = null;
-        }
     }
 }
