@@ -13,6 +13,7 @@ dependencies = [
     "alibabacloud-captcha20230305>=1.1,<2.0",
     "supabase>=2.9",
     "pyjwt[crypto]>=2.9",
+    "websockets>=13",
 ]
 
 [dependency-groups]
