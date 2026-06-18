@@ -137,6 +137,9 @@ class _OpenAICompatRouter:
     async def generate_json(self, model, messages, params):
         return await self._provider_for(model).generate_json(model, messages, params)
 
+    async def embed(self, model, texts):
+        return await self._provider_for(model).embed(model, texts)
+
 
 @lru_cache
 def get_llm_gateway() -> LLMGateway:

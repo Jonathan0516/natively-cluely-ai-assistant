@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.deps import get_current_user, get_llm_gateway, get_usage_meter, get_usage_repo
 from app.main import app
-from app.services.llm_types import ChatDelta, GenResult, Usage
+from app.services.llm_types import ChatDelta, EmbedResult, GenResult, Usage
 from app.services.model_catalog import CATALOG, PLANS
 from app.services.usage_meter import UsageMeter
 from app.services.usage_repo import InMemoryUsageRepo
@@ -36,6 +36,12 @@ class FakeProvider:
         return GenResult(
             text='{"ok": true}', usage=Usage(input_tokens=8, output_tokens=4), model=model
         )
+
+    async def embed(self, model, texts):
+        if self.fail:
+            raise RuntimeError("provider down")
+        return EmbedResult(vectors=[[0.01, 0.02, 0.03]] * len(texts), dim=3,
+                           usage=Usage(input_tokens=6, output_tokens=0), model=model)
 
 
 @pytest.fixture
