@@ -68,3 +68,43 @@ async def llm_json(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     await meter.record(user.id, kind="json", spec=spec, usage=res.usage)
     return {"text": res.text, "model": spec.id}
+
+
+@router.post("/chat")
+async def llm_chat(
+    body: ChatRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    gateway: Annotated[LLMGateway, Depends(get_llm_gateway)],
+    meter: Annotated[UsageMeter, Depends(get_usage_meter)],
+):
+    # Quota + model resolution happen BEFORE we start streaming, so failures are real HTTP codes.
+    try:
+        await meter.check(user.id)
+    except QuotaExceeded as exc:
+        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, _quota_detail(exc)) from exc
+    try:
+        gateway.resolve(body.model)
+    except NoModelAvailable as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    async def event_stream():
+        from ..services.llm_types import Usage
+        used_spec = None
+        usage = Usage()
+        try:
+            async for spec, delta in gateway.stream_chat(
+                body.model, body.to_messages(), body.images, body.to_params()
+            ):
+                used_spec = spec
+                if delta.text:
+                    yield f"data: {json.dumps({'delta': delta.text})}\n\n"
+                if delta.usage:
+                    usage = delta.usage
+        except NoModelAvailable as exc:
+            yield f"data: {json.dumps({'error': {'code': 'no_model', 'message': str(exc)}})}\n\n"
+        finally:
+            if used_spec is not None:
+                await meter.record(user.id, kind="chat", spec=used_spec, usage=usage)
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
