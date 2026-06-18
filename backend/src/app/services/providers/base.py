@@ -18,5 +18,5 @@ class Provider(Protocol):
     ) -> GenResult: ...
 
     async def embed(
-        self, model: str, texts: list[str]
+        self, model: str, texts: list[str], dimensions: int | None = None
     ) -> EmbedResult: ...

@@ -37,7 +37,7 @@ class FakeProvider:
             text='{"ok": true}', usage=Usage(input_tokens=8, output_tokens=4), model=model
         )
 
-    async def embed(self, model, texts):
+    async def embed(self, model, texts, dimensions=None):
         if self.fail:
             raise RuntimeError("provider down")
         return EmbedResult(vectors=[[0.01, 0.02, 0.03]] * len(texts), dim=3,

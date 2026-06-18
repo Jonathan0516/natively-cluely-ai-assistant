@@ -52,7 +52,7 @@ CATALOG: dict[str, ModelSpec] = {
     ),
     "embed-default": ModelSpec(
         id="embed-default", label="Embeddings", tier="free", provider="openai_compat",
-        upstream_model="text-embedding-004", base_url=GEMINI_OPENAI_BASE, key_env="gemini_api_key",
+        upstream_model="gemini-embedding-001", base_url=GEMINI_OPENAI_BASE, key_env="gemini_api_key",
         capabilities=("embedding",), credits_per_1k_input=0.1, credits_per_1k_output=0.0,
         embed_dim=768,
     ),

@@ -23,7 +23,7 @@ def test_embedding_model_present_768d():
     spec = CATALOG["embed-default"]
     assert spec.capabilities == ("embedding",)
     assert spec.embed_dim == 768
-    assert spec.upstream_model == "text-embedding-004"
+    assert spec.upstream_model == "gemini-embedding-001"
 
 
 def test_credits_rounds_up_from_tokens():

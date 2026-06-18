@@ -93,8 +93,12 @@ class OpenAICompatProvider:
             model=model,
         )
 
-    async def embed(self, model: str, texts: list[str]) -> EmbedResult:
-        payload = {"model": model, "input": texts}
+    async def embed(
+        self, model: str, texts: list[str], dimensions: int | None = None
+    ) -> EmbedResult:
+        payload: dict = {"model": model, "input": texts}
+        if dimensions:
+            payload["dimensions"] = dimensions
         resp = await self._http.post(
             f"{self._base}/embeddings", headers=self._headers, json=payload
         )

@@ -61,8 +61,11 @@ async def test_upstream_error_raises():
         await prov.generate_json("m", [ChatMessage("user", "hi")], {})
 
 
-async def test_embed_returns_vectors_and_usage():
+async def test_embed_returns_vectors_and_usage_and_sends_dimensions():
+    seen: dict = {}
+
     def handler(req: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(req.content)
         return httpx.Response(200, json={
             "data": [
                 {"embedding": [0.1, 0.2, 0.3]},
@@ -72,7 +75,20 @@ async def test_embed_returns_vectors_and_usage():
         })
 
     prov = OpenAICompatProvider(http=_make_client(handler), api_key="k", base_url="https://x/v1")
-    res = await prov.embed("text-embedding-004", ["a", "b"])
+    res = await prov.embed("gemini-embedding-001", ["a", "b"], dimensions=768)
     assert res.vectors == [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
     assert res.dim == 3
     assert res.usage.input_tokens == 9
+    assert seen["body"]["dimensions"] == 768   # dimensions forwarded to upstream
+
+
+async def test_embed_omits_dimensions_when_none():
+    seen: dict = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(req.content)
+        return httpx.Response(200, json={"data": [{"embedding": [0.1]}], "usage": {}})
+
+    prov = OpenAICompatProvider(http=_make_client(handler), api_key="k", base_url="https://x/v1")
+    await prov.embed("gemini-embedding-001", ["a"])
+    assert "dimensions" not in seen["body"]
