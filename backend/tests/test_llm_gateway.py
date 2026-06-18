@@ -1,7 +1,14 @@
 import pytest
 
 from app.services.llm_gateway import LLMGateway
-from app.services.llm_types import ChatDelta, ChatMessage, GenResult, NoModelAvailable, Usage
+from app.services.llm_types import (
+    ChatDelta,
+    ChatMessage,
+    EmbedResult,
+    GenResult,
+    NoModelAvailable,
+    Usage,
+)
 from app.services.model_catalog import CATALOG
 
 
@@ -12,6 +19,9 @@ class _OkProvider:
         yield ChatDelta(usage=Usage(input_tokens=3, output_tokens=1))
     async def generate_json(self, model, messages, params):
         return GenResult(text="{}", usage=Usage(input_tokens=3, output_tokens=1), model=model)
+    async def embed(self, model, texts):
+        return EmbedResult(vectors=[[0.1, 0.2]] * len(texts), dim=2,
+                           usage=Usage(input_tokens=5, output_tokens=0), model=model)
 
 
 class _FailProvider:
@@ -60,3 +70,17 @@ async def test_stream_chat_yields_text():
     assert spec_holder["spec"].id == "answer-pro"
     assert any(c.text == "hi" for c in chunks)
     assert any(c.usage for c in chunks)
+
+
+async def test_embed_returns_spec_and_vectors():
+    gw = LLMGateway(CATALOG, {"openai_compat": _OkProvider()})
+    spec, res = await gw.embed("embed-default", ["hello", "world"])
+    assert spec.id == "embed-default"
+    assert spec.upstream_model == "text-embedding-004"
+    assert res.dim == 2 and len(res.vectors) == 2
+
+
+async def test_embed_unknown_model_raises():
+    gw = LLMGateway(CATALOG, {"openai_compat": _OkProvider()})
+    with pytest.raises(NoModelAvailable):
+        await gw.embed("nope", ["x"])

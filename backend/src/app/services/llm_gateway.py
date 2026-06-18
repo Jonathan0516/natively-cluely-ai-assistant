@@ -6,7 +6,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 
-from .llm_types import ChatDelta, ChatMessage, GenResult, NoModelAvailable
+from .llm_types import ChatDelta, ChatMessage, EmbedResult, GenResult, NoModelAvailable
 from .model_catalog import ModelSpec
 from .providers.base import Provider
 
@@ -69,3 +69,10 @@ class LLMGateway:
                 logger.warning("stream_chat %s failed: %s", mid, exc)
                 errors.append(f"{mid}: {exc}")
         raise NoModelAvailable("; ".join(errors) or model_id)
+
+    async def embed(
+        self, model_id: str, texts: list[str]
+    ) -> tuple[ModelSpec, EmbedResult]:
+        spec, prov = self.resolve(model_id)
+        res = await prov.embed(spec.upstream_model, texts)
+        return spec, res
