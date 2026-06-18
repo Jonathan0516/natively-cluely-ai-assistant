@@ -38,13 +38,15 @@ class Plan:
 CATALOG: dict[str, ModelSpec] = {
     "answer-fast": ModelSpec(
         id="answer-fast", label="Fast", tier="free", provider="openai_compat",
-        upstream_model="gemini-3.1-flash-lite", base_url=GEMINI_OPENAI_BASE, key_env="gemini_api_key",
+        upstream_model="gemini-3.1-flash-lite", base_url=GEMINI_OPENAI_BASE,
+        key_env="gemini_api_key",
         capabilities=("text", "json"), credits_per_1k_input=0.5, credits_per_1k_output=1.5,
         fallbacks=("answer-pro",),
     ),
     "answer-pro": ModelSpec(
         id="answer-pro", label="Pro", tier="pro", provider="openai_compat",
-        upstream_model="gemini-3.1-pro-preview", base_url=GEMINI_OPENAI_BASE, key_env="gemini_api_key",
+        upstream_model="gemini-3.1-pro-preview", base_url=GEMINI_OPENAI_BASE,
+        key_env="gemini_api_key",
         capabilities=("text", "json", "vision"),
         credits_per_1k_input=5.0, credits_per_1k_output=15.0,
     ),

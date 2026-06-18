@@ -43,21 +43,21 @@ async def test_set_and_get_plan():
 async def test_status_reflects_recorded_usage():
     repo = InMemoryUsageRepo()
     meter = UsageMeter(repo, CATALOG, PLANS)
-    spec = CATALOG["answer-netmind"]
+    spec = CATALOG["answer-fast"]
     await meter.record(
         "u1", kind="json", spec=spec, usage=Usage(input_tokens=1000, output_tokens=1000)
     )
     status = await meter.status("u1")
     assert status.plan == "free"
     assert status.credits_total == PLANS["free"].credits_per_period
-    assert status.credits_used == 3   # 1*1 + 1*2 = 3 credits
+    assert status.credits_used == 2   # 0.5*1 + 1.5*1 = 2 credits
 
 
 async def test_check_raises_when_exhausted():
     repo = InMemoryUsageRepo()
     meter = UsageMeter(repo, CATALOG, PLANS)
     # Free plan = 1000 credits. Burn it all via one big event.
-    spec = CATALOG["answer-netmind"]
+    spec = CATALOG["answer-fast"]
     await repo.record_event("u1", kind="json", model=spec.id,
                             input_tokens=0, output_tokens=500_000, credits=1000)
     with pytest.raises(QuotaExceeded):
