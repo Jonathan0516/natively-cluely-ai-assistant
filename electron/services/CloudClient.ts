@@ -238,6 +238,18 @@ export class CloudClient {
   }
 
   // --------------------------------------------------------------------- //
+  // LLM gateway (metered, platform-held Gemini key)                       //
+  // --------------------------------------------------------------------- //
+
+  /** Compute embeddings on the backend (platform Gemini key, metered). */
+  async llmEmbeddings(
+    texts: string[],
+    model?: string,
+  ): Promise<{ embeddings: number[][]; dim: number; model: string }> {
+    return this.post(`/llm/embeddings`, model ? { texts, model } : { texts })
+  }
+
+  // --------------------------------------------------------------------- //
   // Modes                                                                 //
   // --------------------------------------------------------------------- //
 
