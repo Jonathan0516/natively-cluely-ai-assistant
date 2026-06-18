@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 
 import httpx
 
-from ..llm_types import ChatDelta, ChatMessage, GenResult, Usage
+from ..llm_types import ChatDelta, ChatMessage, EmbedResult, GenResult, Usage
 
 
 def _to_wire(messages: list[ChatMessage], images: list[str]) -> list[dict]:
@@ -90,5 +90,21 @@ class OpenAICompatProvider:
             text=text,
             usage=Usage(input_tokens=usage.get("prompt_tokens", 0),
                         output_tokens=usage.get("completion_tokens", 0)),
+            model=model,
+        )
+
+    async def embed(self, model: str, texts: list[str]) -> EmbedResult:
+        payload = {"model": model, "input": texts}
+        resp = await self._http.post(
+            f"{self._base}/embeddings", headers=self._headers, json=payload
+        )
+        resp.raise_for_status()
+        obj = resp.json()
+        vectors = [d["embedding"] for d in obj.get("data", [])]
+        usage = obj.get("usage", {})
+        dim = len(vectors[0]) if vectors else 0
+        return EmbedResult(
+            vectors=vectors, dim=dim,
+            usage=Usage(input_tokens=usage.get("prompt_tokens", 0), output_tokens=0),
             model=model,
         )

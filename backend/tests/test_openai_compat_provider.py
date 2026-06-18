@@ -59,3 +59,20 @@ async def test_upstream_error_raises():
     prov = OpenAICompatProvider(http=_make_client(handler), api_key="k", base_url="https://x/v1")
     with pytest.raises(httpx.HTTPStatusError):
         await prov.generate_json("m", [ChatMessage("user", "hi")], {})
+
+
+async def test_embed_returns_vectors_and_usage():
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={
+            "data": [
+                {"embedding": [0.1, 0.2, 0.3]},
+                {"embedding": [0.4, 0.5, 0.6]},
+            ],
+            "usage": {"prompt_tokens": 9},
+        })
+
+    prov = OpenAICompatProvider(http=_make_client(handler), api_key="k", base_url="https://x/v1")
+    res = await prov.embed("text-embedding-004", ["a", "b"])
+    assert res.vectors == [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
+    assert res.dim == 3
+    assert res.usage.input_tokens == 9
