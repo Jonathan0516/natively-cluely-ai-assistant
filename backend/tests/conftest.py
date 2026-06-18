@@ -102,6 +102,11 @@ def fake_gateway():
 
 
 @pytest.fixture
+def test_user():
+    return TEST_USER
+
+
+@pytest.fixture
 def fake_stt():
     return FakeDeepgram()
 

@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .routers import auth, embeddings, health, llm, meetings, modes, profile, user_kv
+from .routers import auth, embeddings, health, llm, meetings, modes, profile, stt, user_kv
 
 
 @asynccontextmanager
@@ -43,3 +43,4 @@ app.include_router(modes.router)
 app.include_router(profile.router)
 app.include_router(user_kv.router)
 app.include_router(llm.router)
+app.include_router(stt.router)
