@@ -2,6 +2,7 @@ from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
+import httpx
 import jwt
 
 from .config import Settings, get_settings
@@ -9,7 +10,12 @@ from .services.aliyun_captcha import AliyunCaptchaVerifier, CaptchaVerifier, Noo
 from .services.aliyun_pnvs import AliyunPnvsSmsSender, MockSmsSender, SmsSender
 from .services.data_repo import DataRepo, InMemoryDataRepo, SupabaseDataRepo
 from .services.jwt_service import JwtService
+from .services.llm_gateway import LLMGateway
+from .services.model_catalog import CATALOG, PLANS
+from .services.providers.openai_compat import OpenAICompatProvider
 from .services.rate_limiter import InMemoryRateLimiter, RateLimiter
+from .services.usage_meter import UsageMeter
+from .services.usage_repo import InMemoryUsageRepo, SupabaseUsageRepo, UsageRepo
 from .services.user_repo import InMemoryUserRepo, SupabaseUserRepo, User, UserRepo
 
 
@@ -94,3 +100,48 @@ async def get_current_user(
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "user not found")
     return user
+
+
+@lru_cache
+def get_usage_repo() -> UsageRepo:
+    settings = get_settings()
+    if not settings.supabase_enabled:
+        return InMemoryUsageRepo()
+    return SupabaseUsageRepo(url=settings.supabase_url, service_role_key=settings.supabase_service_role_key)
+
+
+def get_usage_meter(repo: UsageRepo = Depends(get_usage_repo)) -> UsageMeter:
+    return UsageMeter(repo, CATALOG, PLANS)
+
+
+class _OpenAICompatRouter:
+    """Wraps per-spec base_url/key selection behind the single 'openai_compat' provider slot.
+    Looks up the ModelSpec by upstream_model to pick the right base_url + platform key."""
+    name = "openai_compat"
+
+    def __init__(self, http: httpx.AsyncClient, settings):
+        self._http = http
+        self._settings = settings
+        self._by_upstream = {s.upstream_model: s for s in CATALOG.values()}
+
+    def _provider_for(self, upstream_model: str) -> OpenAICompatProvider:
+        spec = self._by_upstream[upstream_model]
+        key = getattr(self._settings, spec.key_env, "")
+        return OpenAICompatProvider(http=self._http, api_key=key, base_url=spec.base_url)
+
+    def stream_chat(self, model, messages, images, params):
+        return self._provider_for(model).stream_chat(model, messages, images, params)
+
+    async def generate_json(self, model, messages, params):
+        return await self._provider_for(model).generate_json(model, messages, params)
+
+
+@lru_cache
+def get_llm_gateway() -> LLMGateway:
+    settings = get_settings()
+    http = httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0))
+    # One OpenAI-compatible provider instance per distinct (base_url, key). The gateway
+    # keys providers by ModelSpec.provider; for now all specs use "openai_compat", so we
+    # build a single dispatching provider that picks base_url+key per upstream model.
+    provider = _OpenAICompatRouter(http, settings)
+    return LLMGateway(CATALOG, {"openai_compat": provider})

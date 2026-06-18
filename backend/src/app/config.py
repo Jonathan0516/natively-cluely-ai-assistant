@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     supabase_url: str = Field(default="")
     supabase_service_role_key: str = Field(default="")
 
+    # Platform-held LLM/STT provider keys (gateway uses these; clients no longer hold keys).
+    openai_api_key: str = Field(default="")
+    gemini_api_key: str = Field(default="")
+    anthropic_api_key: str = Field(default="")
+    groq_api_key: str = Field(default="")
+    netmind_api_key: str = Field(default="")
+    deepgram_api_key: str = Field(default="")
+
     jwt_secret: str = Field(default="dev-only-do-not-use-in-prod-please-change-me")
     jwt_algorithm: str = Field(default="HS256")
     jwt_access_ttl_seconds: int = Field(default=3600)
