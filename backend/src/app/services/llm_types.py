@@ -34,6 +34,14 @@ class GenResult:
 
 
 @dataclass
+class EmbedResult:
+    vectors: list[list[float]]
+    dim: int
+    usage: Usage
+    model: str         # actual upstream model used
+
+
+@dataclass
 class QuotaStatus:
     plan: str
     period_start: str
