@@ -1,9 +1,9 @@
 from functools import lru_cache
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, status
 import httpx
 import jwt
+from fastapi import Depends, Header, HTTPException, status
 
 from .config import Settings, get_settings
 from .services.aliyun_captcha import AliyunCaptchaVerifier, CaptchaVerifier, NoopCaptchaVerifier
@@ -107,7 +107,9 @@ def get_usage_repo() -> UsageRepo:
     settings = get_settings()
     if not settings.supabase_enabled:
         return InMemoryUsageRepo()
-    return SupabaseUsageRepo(url=settings.supabase_url, service_role_key=settings.supabase_service_role_key)
+    return SupabaseUsageRepo(
+        url=settings.supabase_url, service_role_key=settings.supabase_service_role_key
+    )
 
 
 def get_usage_meter(repo: UsageRepo = Depends(get_usage_repo)) -> UsageMeter:

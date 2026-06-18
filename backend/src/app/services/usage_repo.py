@@ -4,7 +4,7 @@ InMemoryUsageRepo for dev/test, SupabaseUsageRepo for prod (service-role key).""
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Protocol
 
 from .model_catalog import DEFAULT_PLAN
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 class UsageRepo(Protocol):

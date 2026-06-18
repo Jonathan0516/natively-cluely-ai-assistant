@@ -46,7 +46,8 @@ CATALOG: dict[str, ModelSpec] = {
     "answer-pro": ModelSpec(
         id="answer-pro", label="Pro", tier="pro", provider="openai_compat",
         upstream_model="gpt-4o", base_url=OPENAI_BASE, key_env="openai_api_key",
-        capabilities=("text", "json", "vision"), credits_per_1k_input=5.0, credits_per_1k_output=15.0,
+        capabilities=("text", "json", "vision"),
+        credits_per_1k_input=5.0, credits_per_1k_output=15.0,
         fallbacks=("answer-netmind",),
     ),
     "answer-netmind": ModelSpec(

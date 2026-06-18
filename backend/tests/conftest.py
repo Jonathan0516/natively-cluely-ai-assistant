@@ -11,7 +11,9 @@ from app.services.usage_meter import UsageMeter
 from app.services.usage_repo import InMemoryUsageRepo
 from app.services.user_repo import User
 
-TEST_USER = User(id="u-test", phone="+10000000000", created_at="2026-01-01", last_login_at="2026-01-01")
+TEST_USER = User(
+    id="u-test", phone="+10000000000", created_at="2026-01-01", last_login_at="2026-01-01"
+)
 
 
 class FakeProvider:
@@ -31,7 +33,9 @@ class FakeProvider:
     async def generate_json(self, model, messages, params):
         if self.fail:
             raise RuntimeError("provider down")
-        return GenResult(text='{"ok": true}', usage=Usage(input_tokens=8, output_tokens=4), model=model)
+        return GenResult(
+            text='{"ok": true}', usage=Usage(input_tokens=8, output_tokens=4), model=model
+        )
 
 
 @pytest.fixture

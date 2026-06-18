@@ -2,7 +2,7 @@
 """Quota enforcement + usage recording. Stateless over UsageRepo + catalog/plans."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from .llm_types import QuotaExceeded, QuotaStatus, Usage
 from .model_catalog import ModelSpec, Plan, credits_for
@@ -12,7 +12,7 @@ from .usage_repo import UsageRepo
 def _period_bounds(period: str, anchor_iso: str | None) -> tuple[str, str]:
     """Return (start, end) ISO strings for the current period. Calendar-month aligned
     to UTC when no explicit anchor; weekly is a rolling 7-day window from anchor/now."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if period == "week":
         start = datetime.fromisoformat(anchor_iso) if anchor_iso else now
         while now - start >= timedelta(days=7):

@@ -8,7 +8,7 @@ from app.services.providers.openai_compat import OpenAICompatProvider
 
 
 def _sse(lines: list[str]) -> bytes:
-    return ("".join(f"data: {l}\n\n" for l in lines)).encode()
+    return ("".join(f"data: {ln}\n\n" for ln in lines)).encode()
 
 
 def _make_client(handler):
@@ -20,7 +20,10 @@ async def test_stream_chat_yields_deltas_and_usage():
         body = _sse([
             json.dumps({"choices": [{"delta": {"content": "Hel"}}]}),
             json.dumps({"choices": [{"delta": {"content": "lo"}}]}),
-            json.dumps({"choices": [{"delta": {}}], "usage": {"prompt_tokens": 7, "completion_tokens": 2}}),
+            json.dumps({
+                "choices": [{"delta": {}}],
+                "usage": {"prompt_tokens": 7, "completion_tokens": 2},
+            }),
             "[DONE]",
         ])
         return httpx.Response(200, content=body, headers={"content-type": "text/event-stream"})

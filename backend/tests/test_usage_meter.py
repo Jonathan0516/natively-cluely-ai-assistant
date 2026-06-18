@@ -7,10 +7,14 @@ from app.services.usage_repo import InMemoryUsageRepo
 
 
 def test_quota_remaining_and_exhausted():
-    q = QuotaStatus(plan="free", period_start="a", period_end="b", credits_total=100, credits_used=30)
+    q = QuotaStatus(
+        plan="free", period_start="a", period_end="b", credits_total=100, credits_used=30
+    )
     assert q.credits_remaining == 70
     assert q.exhausted is False
-    q2 = QuotaStatus(plan="free", period_start="a", period_end="b", credits_total=100, credits_used=100)
+    q2 = QuotaStatus(
+        plan="free", period_start="a", period_end="b", credits_total=100, credits_used=100
+    )
     assert q2.credits_remaining == 0
     assert q2.exhausted is True
 
@@ -40,7 +44,9 @@ async def test_status_reflects_recorded_usage():
     repo = InMemoryUsageRepo()
     meter = UsageMeter(repo, CATALOG, PLANS)
     spec = CATALOG["answer-netmind"]
-    await meter.record("u1", kind="json", spec=spec, usage=Usage(input_tokens=1000, output_tokens=1000))
+    await meter.record(
+        "u1", kind="json", spec=spec, usage=Usage(input_tokens=1000, output_tokens=1000)
+    )
     status = await meter.status("u1")
     assert status.plan == "free"
     assert status.credits_total == PLANS["free"].credits_per_period
