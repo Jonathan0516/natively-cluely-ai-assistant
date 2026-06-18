@@ -127,6 +127,16 @@ export class CloudClient {
     return stored.access_token
   }
 
+  /** Public valid-access-token getter (refreshes proactively) for WS auth. */
+  async getAccessToken(): Promise<string> {
+    return this.accessToken()
+  }
+
+  /** ws(s):// base URL for streaming endpoints (mirrors the http backend base). */
+  get wsBaseUrl(): string {
+    return backendUrl().replace(/^http/, "ws")
+  }
+
   // --------------------------------------------------------------------- //
   // Core request                                                          //
   // --------------------------------------------------------------------- //
