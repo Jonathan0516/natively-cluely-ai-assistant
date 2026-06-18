@@ -73,6 +73,10 @@ class LLMGateway:
     async def embed(
         self, model_id: str, texts: list[str]
     ) -> tuple[ModelSpec, EmbedResult]:
-        spec, prov = self.resolve(model_id)
-        res = await prov.embed(spec.upstream_model, texts)
+        spec, prov = self.resolve(model_id)  # NoModelAvailable for unknown model
+        try:
+            res = await prov.embed(spec.upstream_model, texts)
+        except Exception as exc:  # noqa: BLE001 — surface provider/upstream failure as a clean error
+            logger.warning("embed %s failed: %s", model_id, exc)
+            raise NoModelAvailable(f"{model_id}: {exc}") from exc
         return spec, res

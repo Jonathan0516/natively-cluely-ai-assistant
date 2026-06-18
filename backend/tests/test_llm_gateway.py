@@ -31,6 +31,8 @@ class _FailProvider:
         yield  # pragma: no cover
     async def generate_json(self, model, messages, params):
         raise RuntimeError("down")
+    async def embed(self, model, texts):
+        raise RuntimeError("down")
 
 
 def test_resolve_returns_spec_and_provider():
@@ -84,3 +86,10 @@ async def test_embed_unknown_model_raises():
     gw = LLMGateway(CATALOG, {"openai_compat": _OkProvider()})
     with pytest.raises(NoModelAvailable):
         await gw.embed("nope", ["x"])
+
+
+async def test_embed_provider_failure_raises_no_model_available():
+    # A provider/upstream failure must surface as NoModelAvailable (→ router 400), not bubble up.
+    gw = LLMGateway(CATALOG, {"openai_compat": _FailProvider()})
+    with pytest.raises(NoModelAvailable):
+        await gw.embed("embed-default", ["x"])
