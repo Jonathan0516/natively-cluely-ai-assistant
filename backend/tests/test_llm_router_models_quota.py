@@ -6,6 +6,7 @@ def test_models_lists_catalog_with_availability(client):
     # free plan (default for test user): free-tier model available, pro-tier not
     assert by_id["answer-fast"]["available"] is True
     assert by_id["answer-pro"]["available"] is False
+    assert "embed-default" not in by_id
 
 
 def test_quota_returns_status_without_raising(client):

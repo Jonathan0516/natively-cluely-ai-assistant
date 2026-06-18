@@ -125,6 +125,7 @@ async def llm_models(
             "available": s.tier in allowed,
         }
         for s in CATALOG.values()
+        if "text" in s.capabilities
     ]
 
 
@@ -139,3 +140,27 @@ async def llm_quota(
         "credits_total": s.credits_total, "credits_used": s.credits_used,
         "credits_remaining": s.credits_remaining,
     }
+
+
+class EmbeddingsRequest(BaseModel):
+    texts: list[str]
+    model: str = "embed-default"
+
+
+@router.post("/embeddings")
+async def llm_embeddings(
+    body: EmbeddingsRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    gateway: Annotated[LLMGateway, Depends(get_llm_gateway)],
+    meter: Annotated[UsageMeter, Depends(get_usage_meter)],
+) -> dict:
+    try:
+        await meter.check(user.id)
+    except QuotaExceeded as exc:
+        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, _quota_detail(exc)) from exc
+    try:
+        spec, res = await gateway.embed(body.model, body.texts)
+    except NoModelAvailable as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    await meter.record(user.id, kind="embeddings", spec=spec, usage=res.usage)
+    return {"embeddings": res.vectors, "dim": res.dim, "model": spec.id}
