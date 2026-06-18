@@ -6,11 +6,20 @@ def test_catalog_has_free_and_pro_models():
     assert "free" in tiers and "pro" in tiers
 
 
-def test_every_model_points_at_gemini():
+def test_llm_models_point_at_gemini():
     for m in CATALOG.values():
-        assert m.provider == "openai_compat"
+        if m.provider != "openai_compat":
+            continue
         assert m.base_url.startswith("https://generativelanguage.googleapis.com")
         assert m.key_env == "gemini_api_key"
+
+
+def test_stt_model_present():
+    spec = CATALOG["stt-default"]
+    assert spec.provider == "deepgram"
+    assert spec.capabilities == ("stt",)
+    assert spec.key_env == "deepgram_api_key"
+    assert spec.credits_per_audio_second > 0
 
 
 def test_chat_models_use_gemini_3_1():

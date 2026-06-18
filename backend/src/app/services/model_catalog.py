@@ -23,6 +23,7 @@ class ModelSpec:
     credits_per_1k_input: float = 1.0
     credits_per_1k_output: float = 3.0
     embed_dim: int = 0            # >0 only for embedding models
+    credits_per_audio_second: float = 0.0   # >0 only for STT models
     fallbacks: tuple[str, ...] = ()   # logical ids tried if this one fails
 
 
@@ -55,6 +56,12 @@ CATALOG: dict[str, ModelSpec] = {
         upstream_model="gemini-embedding-001", base_url=GEMINI_OPENAI_BASE, key_env="gemini_api_key",
         capabilities=("embedding",), credits_per_1k_input=0.1, credits_per_1k_output=0.0,
         embed_dim=768,
+    ),
+    "stt-default": ModelSpec(
+        id="stt-default", label="Speech-to-Text", tier="free", provider="deepgram",
+        upstream_model="nova-2", base_url="wss://api.deepgram.com/v1/listen",
+        key_env="deepgram_api_key", capabilities=("stt",),
+        credits_per_audio_second=0.1,
     ),
 }
 

@@ -69,3 +69,22 @@ async def test_check_passes_when_under_quota():
     meter = UsageMeter(repo, CATALOG, PLANS)
     status = await meter.check("u1")   # no usage yet
     assert status.credits_remaining == PLANS["free"].credits_per_period
+
+
+async def test_stt_credits_by_audio_seconds():
+    repo = InMemoryUsageRepo()
+    meter = UsageMeter(repo, CATALOG, PLANS)
+    spec = CATALOG["stt-default"]
+    credits = await meter.record("u1", kind="stt", spec=spec, usage=Usage(), audio_seconds=100.0)
+    # 100s * credits_per_audio_second (0.1) = 10 credits
+    assert credits == 10
+    used = await repo.credits_used_since("u1", "1970-01-01T00:00:00+00:00")
+    assert used == 10
+
+
+async def test_stt_min_one_credit():
+    repo = InMemoryUsageRepo()
+    meter = UsageMeter(repo, CATALOG, PLANS)
+    credits = await meter.record("u1", kind="stt", spec=CATALOG["stt-default"], usage=Usage(),
+                                 audio_seconds=0.5)
+    assert credits == 1

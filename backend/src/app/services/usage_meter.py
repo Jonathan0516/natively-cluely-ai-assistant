@@ -2,6 +2,7 @@
 """Quota enforcement + usage recording. Stateless over UsageRepo + catalog/plans."""
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime, timedelta
 
 from .llm_types import QuotaExceeded, QuotaStatus, Usage
@@ -52,9 +53,12 @@ class UsageMeter:
 
     async def record(self, user_id: str, *, kind: str, spec: ModelSpec, usage: Usage,
                      audio_seconds: float = 0.0) -> int:
-        credits = credits_for(spec, usage.input_tokens, usage.output_tokens)
-        if audio_seconds:
-            credits = max(credits, max(1, round(audio_seconds)))
+        if kind == "stt":
+            credits = max(1, math.ceil(audio_seconds * spec.credits_per_audio_second))
+        else:
+            credits = credits_for(spec, usage.input_tokens, usage.output_tokens)
+            if audio_seconds:
+                credits = max(credits, max(1, round(audio_seconds)))
         await self._repo.record_event(
             user_id, kind=kind, model=spec.id,
             input_tokens=usage.input_tokens, output_tokens=usage.output_tokens,
