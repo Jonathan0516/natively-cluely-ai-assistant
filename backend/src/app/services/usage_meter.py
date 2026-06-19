@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from datetime import UTC, datetime, timedelta
 
-from .llm_types import QuotaExceeded, QuotaStatus, Usage
+from .llm_types import QuotaExceeded, QuotaStatus, TierNotAllowed, Usage
 from .model_catalog import ModelSpec, Plan, credits_for
 from .usage_repo import UsageRepo
 
@@ -69,3 +69,9 @@ class UsageMeter:
     def plan_allowed_tiers(self, plan_id: str) -> tuple[str, ...]:
         plan = self._plans.get(plan_id, self._plans["free"])
         return plan.allowed_tiers
+
+    async def authorize_model(self, user_id: str, spec: ModelSpec) -> None:
+        """Raise TierNotAllowed if the user's plan does not unlock the model's tier."""
+        plan_id = await self._repo.get_plan_id(user_id)
+        if spec.tier not in self.plan_allowed_tiers(plan_id):
+            raise TierNotAllowed(spec.tier, plan_id)

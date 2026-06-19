@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from ..deps import get_current_user, get_llm_gateway, get_usage_meter
 from ..services.llm_gateway import LLMGateway
-from ..services.llm_types import ChatMessage, NoModelAvailable, QuotaExceeded
+from ..services.llm_types import ChatMessage, NoModelAvailable, QuotaExceeded, TierNotAllowed
 from ..services.model_catalog import CATALOG
 from ..services.usage_meter import UsageMeter
 from ..services.user_repo import User
@@ -52,6 +52,10 @@ def _quota_detail(exc: QuotaExceeded) -> dict:
             "credits_total": s.credits_total, "plan": s.plan}
 
 
+def _tier_detail(exc: TierNotAllowed) -> dict:
+    return {"error": "tier_not_allowed", "required_tier": exc.required_tier, "plan": exc.plan}
+
+
 @router.post("/json")
 async def llm_json(
     body: ChatRequest,
@@ -63,6 +67,14 @@ async def llm_json(
         await meter.check(user.id)
     except QuotaExceeded as exc:
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, _quota_detail(exc)) from exc
+    try:
+        requested_spec, _ = gateway.resolve(body.model)
+    except NoModelAvailable as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    try:
+        await meter.authorize_model(user.id, requested_spec)
+    except TierNotAllowed as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, _tier_detail(exc)) from exc
     try:
         spec, res = await gateway.generate_json(body.model, body.to_messages(), body.to_params())
     except NoModelAvailable as exc:
@@ -84,9 +96,13 @@ async def llm_chat(
     except QuotaExceeded as exc:
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, _quota_detail(exc)) from exc
     try:
-        gateway.resolve(body.model)
+        requested_spec, _ = gateway.resolve(body.model)
     except NoModelAvailable as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    try:
+        await meter.authorize_model(user.id, requested_spec)
+    except TierNotAllowed as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, _tier_detail(exc)) from exc
 
     async def event_stream():
         from ..services.llm_types import Usage

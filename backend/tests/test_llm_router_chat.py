@@ -17,7 +17,7 @@ def _collect_sse(raw: str) -> tuple[str, bool]:
 
 async def test_chat_streams_text_and_records_usage(client, usage_repo):
     with client.stream("POST", "/llm/chat", json={
-        "model": "answer-pro",
+        "model": "answer-fast",
         "messages": [{"role": "user", "content": "hi"}],
     }) as resp:
         assert resp.status_code == 200
@@ -35,3 +35,11 @@ def test_chat_unknown_model_400(client):
         "model": "nope", "messages": [{"role": "user", "content": "hi"}],
     })
     assert resp.status_code == 400
+
+
+def test_chat_403_when_model_tier_not_in_plan(client):
+    resp = client.post("/llm/chat", json={
+        "model": "answer-pro", "messages": [{"role": "user", "content": "hi"}],
+    })
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["error"] == "tier_not_allowed"

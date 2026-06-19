@@ -68,5 +68,13 @@ class NoModelAvailable(Exception):
     """Raised by the gateway when no provider in the fallback chain succeeded."""
 
 
+class TierNotAllowed(Exception):
+    """Raised when the requested model's tier is not unlocked by the user's plan."""
+    def __init__(self, required_tier: str, plan: str):
+        self.required_tier = required_tier
+        self.plan = plan
+        super().__init__(f"model tier '{required_tier}' not allowed on plan '{plan}'")
+
+
 class ChatStream(Protocol):
     def __aiter__(self) -> AsyncIterator[ChatDelta]: ...
