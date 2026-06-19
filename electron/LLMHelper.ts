@@ -2220,6 +2220,35 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     yield "All AI services are currently unavailable. Please check your API keys and try again.";
   }
 
+  /** Backend chat gateway is enabled via env flag (phase-4 vertical slice). */
+  private gatewayChatEnabled(): boolean {
+    return process.env.NATIVELY_GATEWAY_CHAT === '1';
+  }
+
+  /** Map the local model id to a backend logical model. */
+  private toLogicalModel(modelId: string): string {
+    if (modelId === 'gemini-3.1-pro-preview') return 'answer-pro';
+    return 'answer-fast';
+  }
+
+  /** Stream a chat completion through the backend gateway (metered, platform key). */
+  private async * streamWithGateway(
+    userContent: string,
+    systemPrompt: string,
+    images?: string[],
+  ): AsyncGenerator<string, void, unknown> {
+    const { CloudClient } = require('./services/CloudClient');
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userContent },
+    ];
+    yield* CloudClient.getInstance().streamLLM({
+      model: this.toLogicalModel(this.currentModelId),
+      messages,
+      images,
+    });
+  }
+
   /**
    * Universal Stream Chat - Routes to correct provider based on currentModelId
    */
@@ -2320,6 +2349,13 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     const userContent = context
       ? `CONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`
       : message;
+
+    // BACKEND GATEWAY (metered, platform key) — when enabled, all streamChat modes
+    // route through the backend instead of local provider SDKs. Default off.
+    if (this.gatewayChatEnabled()) {
+      yield* this.streamWithGateway(userContent, finalSystemPrompt, imagePaths);
+      return;
+    }
 
     // GROQ FAST TEXT OVERRIDE (Text-Only) — requires local Groq key.
     if (this.groqFastTextMode && !isMultimodal && this.groqClient) {
