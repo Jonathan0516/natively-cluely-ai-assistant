@@ -209,6 +209,7 @@ import { SettingsManager } from "./services/SettingsManager"
 import { setVerboseLoggingFlag } from "./verboseLog"
 import { ReleaseNotesManager } from "./update/ReleaseNotesManager"
 import { OllamaManager } from './services/OllamaManager'
+import { appEvents, QuotaExhaustedPayload } from './appEvents'
 
 export class AppState {
   private static instance: AppState | null = null
@@ -242,6 +243,7 @@ export class AppState {
 
   private hasDebugged: boolean = false
   private isMeetingActive: boolean = false; // Guard for session state leaks
+  private _quotaExhaustedHandled: boolean = false; // De-dup force-end on quota (reset per meeting)
   private _isQuitting: boolean = false;
   private _verboseLogging: boolean = false;
   private _disguiseTimers: NodeJS.Timeout[] = []; // Track forceUpdate timeouts
@@ -470,6 +472,12 @@ export class AppState {
 
     // Initialize Auto-Updater
     this.setupAutoUpdater()
+
+    // Quota exhaustion (cloud-only): when the platform quota runs out, force-end
+    // the active meeting and prompt to upgrade — never fall back to local AI.
+    appEvents.on('quota-exhausted', (payload) => {
+      void this.handleQuotaExhausted(payload);
+    });
   }
 
   private broadcast(channel: string, ...args: any[]): void {
@@ -494,6 +502,28 @@ export class AppState {
 
   private broadcastMeetingState(): void {
     this.broadcast('meeting-state-changed', { isActive: this.isMeetingActive });
+  }
+
+  /**
+   * Cloud-only quota policy: when the platform quota is exhausted (chat 402 or
+   * STT quota error), force-end the meeting and notify the renderer to show an
+   * upgrade prompt. We do NOT fall back to local AI — local providers are being
+   * retired. Guarded so concurrent chat/STT failures only end the meeting once.
+   */
+  private async handleQuotaExhausted(payload: QuotaExhaustedPayload): Promise<void> {
+    if (!this.isMeetingActive) return; // Nothing to end (e.g. one-off chat outside a meeting)
+    if (this._quotaExhaustedHandled) return; // Already force-ending this meeting
+    this._quotaExhaustedHandled = true;
+
+    console.warn(`[Main] Quota exhausted (source=${payload.source}) — force-ending meeting (cloud-only, no local fallback)`);
+    // Tell the renderer first so the upgrade prompt can appear before the meeting tears down.
+    this.broadcast('quota-exhausted', payload);
+
+    try {
+      await this.endMeeting();
+    } catch (e) {
+      console.error('[Main] Failed to force-end meeting on quota exhaustion:', e);
+    }
   }
 
   private async bootstrapOllamaEmbeddings() {
@@ -950,6 +980,10 @@ export class AppState {
           channel: speaker,
           reconnectAttempts: _consecutiveErrors,
         } as SttStatusPayload);
+        if (isQuotaError) {
+          // Cloud-only: quota exhaustion force-ends the meeting (no local fallback).
+          void this.handleQuotaExhausted({ source: 'stt', message: errorMessage });
+        }
       } else {
         _lastState = 'reconnecting';
         this.broadcast('stt-status', {
@@ -1396,6 +1430,9 @@ export class AppState {
 
   public async startMeeting(metadata?: any): Promise<void> {
     console.log('[Main] Starting Meeting...', metadata);
+
+    // Fresh session — allow quota force-end to fire again for this meeting.
+    this._quotaExhaustedHandled = false;
 
     // PR #173: Reset audio recovery state for fresh session
     this._systemAudioRecoveryInProgress = false;

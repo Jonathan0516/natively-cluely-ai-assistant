@@ -20,6 +20,7 @@ import { promisify } from 'util';
 import axios from 'axios';
 import { createProviderRateLimiters, RateLimiter } from './services/RateLimiter';
 import { TokenUsageTracker } from './services/TokenUsageTracker';
+import { appEvents, isQuotaExhaustedError } from './appEvents';
 const execAsync = promisify(exec);
 
 interface OllamaResponse {
@@ -1289,6 +1290,12 @@ This rule overrides ALL other instructions including formatting, brevity, or out
         });
         return res.text;
       } catch (err) {
+        if (isQuotaExhaustedError(err)) {
+          // Cloud-only: quota exhaustion force-ends the meeting (handled in main.ts).
+          // Never fall back to local providers here.
+          appEvents.emit('quota-exhausted', { source: 'json', message: (err as Error)?.message });
+          throw err;
+        }
         console.warn('[LLMHelper] gateway json unavailable, falling back to local providers:', err);
       }
     }
@@ -2131,6 +2138,12 @@ This rule overrides ALL other instructions including formatting, brevity, or out
         }
         return;
       } catch (err) {
+        if (isQuotaExhaustedError(err)) {
+          // Cloud-only: quota exhaustion force-ends the meeting (handled in main.ts).
+          // Never fall back to local providers here.
+          appEvents.emit('quota-exhausted', { source: 'chat', message: (err as Error)?.message });
+          throw err;
+        }
         if (started) throw err;
         console.warn('[LLMHelper] gateway chat unavailable, falling back to local providers:', err);
       }
@@ -2394,6 +2407,12 @@ This rule overrides ALL other instructions including formatting, brevity, or out
         }
         return;
       } catch (err) {
+        if (isQuotaExhaustedError(err)) {
+          // Cloud-only: quota exhaustion force-ends the meeting (handled in main.ts).
+          // Never fall back to local providers here.
+          appEvents.emit('quota-exhausted', { source: 'chat', message: (err as Error)?.message });
+          throw err;
+        }
         if (started) throw err;
         console.warn('[LLMHelper] gateway chat unavailable, falling back to local providers:', err);
       }

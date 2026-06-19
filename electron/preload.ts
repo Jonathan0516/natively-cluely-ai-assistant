@@ -175,6 +175,7 @@ interface ElectronAPI {
   hideOverlay: () => Promise<void>
   getMeetingActive: () => Promise<boolean>
   onMeetingStateChanged: (callback: (data: { isActive: boolean }) => void) => () => void
+  onQuotaExhausted: (callback: (data: { source: 'chat' | 'json' | 'stt'; message?: string }) => void) => () => void
   onWindowMaximizedChanged: (callback: (isMaximized: boolean) => void) => () => void
   onEnsureExpanded: (callback: () => void) => () => void
   onToggleExpand: (callback: () => void) => () => void
@@ -478,6 +479,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
     const subscription = (_: any, data: { isActive: boolean }) => callback(data);
     ipcRenderer.on('meeting-state-changed', subscription);
     return () => { ipcRenderer.removeListener('meeting-state-changed', subscription); };
+  },
+  onQuotaExhausted: (callback: (data: { source: 'chat' | 'json' | 'stt'; message?: string }) => void) => {
+    const subscription = (_: any, data: { source: 'chat' | 'json' | 'stt'; message?: string }) => callback(data);
+    ipcRenderer.on('quota-exhausted', subscription);
+    return () => { ipcRenderer.removeListener('quota-exhausted', subscription); };
   },
   onWindowMaximizedChanged: (callback: (isMaximized: boolean) => void) => {
     const subscription = (_: any, isMaximized: boolean) => callback(isMaximized);
