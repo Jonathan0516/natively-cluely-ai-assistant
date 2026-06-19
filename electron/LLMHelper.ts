@@ -1104,6 +1104,20 @@ This rule overrides ALL other instructions including formatting, brevity, or out
         groq: buildMessage(finalGroqPrompt),
       };
 
+      // BACKEND GATEWAY (metered, platform key) — default path. Falls back to local
+      // providers only if the gateway produces no output before the first token.
+      if (this.gatewayChatEnabled()) {
+        const gwSystem = skipSystemPrompt ? '' : finalGeminiPrompt;
+        try {
+          const out = await this.generateViaGateway(gwSystem, userContent, isMultimodal ? imagePaths : undefined);
+          if (out.trim().length > 0) return out;
+          console.warn('[LLMHelper] gateway chat (non-stream) returned empty, falling back to local providers');
+        } catch (err) {
+          if (isQuotaExhaustedError(err)) throw err; // quota: no local fallback (event already emitted)
+          console.warn('[LLMHelper] gateway chat (non-stream) unavailable, falling back to local providers:', err);
+        }
+      }
+
       // GROQ FAST TEXT OVERRIDE (Text-Only)
       if (this.groqFastTextMode && !isMultimodal && this.groqClient) {
         console.log(`[LLMHelper] ⚡️ Groq Fast Text Mode Active. Routing to Groq...`);
@@ -1860,6 +1874,27 @@ This rule overrides ALL other instructions including formatting, brevity, or out
   }
 
   /**
+   * Non-streaming gateway call — accumulates the backend SSE stream into a single
+   * string. Lets non-streaming internal ops (chatWithGemini, vision analysis) route
+   * through the metered backend instead of local providers. On quota (402) it emits
+   * 'quota-exhausted' and rethrows; returns '' if the gateway yields nothing.
+   */
+  private async generateViaGateway(systemPrompt: string, userContent: string, imagePaths?: string[]): Promise<string> {
+    let out = '';
+    try {
+      for await (const tok of this.streamWithGateway(userContent, systemPrompt, imagePaths)) {
+        out += tok;
+      }
+    } catch (err) {
+      if (isQuotaExhaustedError(err)) {
+        appEvents.emit('quota-exhausted', { source: 'chat', message: (err as Error)?.message });
+      }
+      throw err;
+    }
+    return out;
+  }
+
+  /**
    * Universal non-streaming fallback helper for internal operations (screenshot analysis, problem extraction, etc.)
    *
    * THREE-TIER RETRY ROTATION (self-improving):
@@ -1873,6 +1908,19 @@ This rule overrides ALL other instructions including formatting, brevity, or out
   private async generateWithVisionFallback(systemPrompt: string, userPrompt: string, imagePaths: string[] = []): Promise<string> {
     type ProviderAttempt = { name: string; execute: () => Promise<string> };
     const isMultimodal = imagePaths.length > 0;
+
+    // BACKEND GATEWAY (metered, platform key) — default path for internal vision/text ops.
+    // Falls back to the local tier rotation below only if the gateway produces nothing.
+    if (this.gatewayChatEnabled()) {
+      try {
+        const out = await this.generateViaGateway(systemPrompt, userPrompt, isMultimodal ? imagePaths : undefined);
+        if (out.trim().length > 0) return out;
+        console.warn('[LLMHelper] gateway vision returned empty, falling back to local providers');
+      } catch (err) {
+        if (isQuotaExhaustedError(err)) throw err; // quota: no local fallback (event already emitted)
+        console.warn('[LLMHelper] gateway vision unavailable, falling back to local providers:', err);
+      }
+    }
 
     // Helper: build a provider attempt for a given family + model ID
     const buildProviderForFamily = (family: ModelFamily, modelId: string): ProviderAttempt | null => {
