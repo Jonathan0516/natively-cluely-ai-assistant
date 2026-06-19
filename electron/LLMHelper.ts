@@ -1278,14 +1278,19 @@ This rule overrides ALL other instructions including formatting, brevity, or out
    * NOTE: Does NOT mutate this.geminiModel — calls Gemini Pro directly to avoid race conditions.
    */
   public async generateContentStructured(message: string): Promise<string> {
-    // BACKEND GATEWAY (metered, platform key) — structured JSON via /llm/json when enabled.
+    // BACKEND GATEWAY (metered, platform key) — structured JSON via /llm/json, default path.
+    // Falls back to local providers if the gateway call fails.
     if (this.gatewayChatEnabled()) {
-      const { CloudClient } = require('./services/CloudClient');
-      const res = await CloudClient.getInstance().llmJson({
-        model: this.toLogicalModel(this.currentModelId),
-        messages: [{ role: 'user', content: message }],
-      });
-      return res.text;
+      try {
+        const { CloudClient } = require('./services/CloudClient');
+        const res = await CloudClient.getInstance().llmJson({
+          model: this.toLogicalModel(this.currentModelId),
+          messages: [{ role: 'user', content: message }],
+        });
+        return res.text;
+      } catch (err) {
+        console.warn('[LLMHelper] gateway json unavailable, falling back to local providers:', err);
+      }
     }
 
     type ProviderAttempt = { name: string; execute: () => Promise<string> };
@@ -2113,14 +2118,22 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       groq: buildCombinedMessage(GROQ_SYSTEM_PROMPT + profileBlock),
     };
 
-    // BACKEND GATEWAY (metered, platform key) — when enabled, route through the backend
-    // instead of local provider SDKs / Ollama. Default off (NATIVELY_GATEWAY_CHAT).
+    // BACKEND GATEWAY (metered, platform key) — default path, with fall-back-before-first-token.
     if (this.gatewayChatEnabled()) {
       const gwSystem = skipSystemPrompt
         ? ''
         : this.injectLanguageInstruction(HARD_SYSTEM_PROMPT + profileBlock);
-      yield* this.streamWithGateway(userContent, gwSystem, imagePaths);
-      return;
+      let started = false;
+      try {
+        for await (const tok of this.streamWithGateway(userContent, gwSystem, imagePaths)) {
+          started = true;
+          yield tok;
+        }
+        return;
+      } catch (err) {
+        if (started) throw err;
+        console.warn('[LLMHelper] gateway chat unavailable, falling back to local providers:', err);
+      }
     }
 
     if (this.useOllama) {
@@ -2240,9 +2253,9 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     yield "All AI services are currently unavailable. Please check your API keys and try again.";
   }
 
-  /** Backend chat gateway is enabled via env flag (phase-4 vertical slice). */
+  /** Backend chat gateway is the default path; set NATIVELY_GATEWAY_CHAT=0 to force local providers. */
   private gatewayChatEnabled(): boolean {
-    return process.env.NATIVELY_GATEWAY_CHAT === '1';
+    return process.env.NATIVELY_GATEWAY_CHAT !== '0';
   }
 
   /** Map the local model id to a backend logical model. */
@@ -2370,11 +2383,20 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       ? `CONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`
       : message;
 
-    // BACKEND GATEWAY (metered, platform key) — when enabled, all streamChat modes
-    // route through the backend instead of local provider SDKs. Default off.
+    // BACKEND GATEWAY (metered, platform key) — default path. Falls back to local providers
+    // only if the gateway fails BEFORE the first token (after that we cannot safely retry).
     if (this.gatewayChatEnabled()) {
-      yield* this.streamWithGateway(userContent, finalSystemPrompt, imagePaths);
-      return;
+      let started = false;
+      try {
+        for await (const tok of this.streamWithGateway(userContent, finalSystemPrompt, imagePaths)) {
+          started = true;
+          yield tok;
+        }
+        return;
+      } catch (err) {
+        if (started) throw err;
+        console.warn('[LLMHelper] gateway chat unavailable, falling back to local providers:', err);
+      }
     }
 
     // GROQ FAST TEXT OVERRIDE (Text-Only) — requires local Groq key.
