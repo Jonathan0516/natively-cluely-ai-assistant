@@ -1278,6 +1278,16 @@ This rule overrides ALL other instructions including formatting, brevity, or out
    * NOTE: Does NOT mutate this.geminiModel — calls Gemini Pro directly to avoid race conditions.
    */
   public async generateContentStructured(message: string): Promise<string> {
+    // BACKEND GATEWAY (metered, platform key) — structured JSON via /llm/json when enabled.
+    if (this.gatewayChatEnabled()) {
+      const { CloudClient } = require('./services/CloudClient');
+      const res = await CloudClient.getInstance().llmJson({
+        model: this.toLogicalModel(this.currentModelId),
+        messages: [{ role: 'user', content: message }],
+      });
+      return res.text;
+    }
+
     type ProviderAttempt = { name: string; execute: () => Promise<string> };
     const providers: ProviderAttempt[] = [];
 
@@ -2102,6 +2112,16 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       gemini: buildCombinedMessage(HARD_SYSTEM_PROMPT + profileBlock),
       groq: buildCombinedMessage(GROQ_SYSTEM_PROMPT + profileBlock),
     };
+
+    // BACKEND GATEWAY (metered, platform key) — when enabled, route through the backend
+    // instead of local provider SDKs / Ollama. Default off (NATIVELY_GATEWAY_CHAT).
+    if (this.gatewayChatEnabled()) {
+      const gwSystem = skipSystemPrompt
+        ? ''
+        : this.injectLanguageInstruction(HARD_SYSTEM_PROMPT + profileBlock);
+      yield* this.streamWithGateway(userContent, gwSystem, imagePaths);
+      return;
+    }
 
     if (this.useOllama) {
       const response = await this.callOllama(combinedMessages.gemini, imagePaths?.[0]);
