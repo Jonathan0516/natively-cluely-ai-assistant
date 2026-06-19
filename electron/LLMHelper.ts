@@ -1,55 +1,15 @@
-import { GoogleGenAI } from "@google/genai"
-import Groq from "groq-sdk"
-import OpenAI from "openai"
-import Anthropic from "@anthropic-ai/sdk"
-import fs from "fs"
-import sharp from "sharp"
-import { ModelVersionManager, ModelFamily, TextModelFamily } from './services/ModelVersionManager'
-import {
-  HARD_SYSTEM_PROMPT, GROQ_SYSTEM_PROMPT, OPENAI_SYSTEM_PROMPT, CLAUDE_SYSTEM_PROMPT,
-  UNIVERSAL_SYSTEM_PROMPT, UNIVERSAL_ANSWER_PROMPT, UNIVERSAL_WHAT_TO_ANSWER_PROMPT,
-  UNIVERSAL_RECAP_PROMPT, UNIVERSAL_FOLLOWUP_PROMPT, UNIVERSAL_FOLLOW_UP_QUESTIONS_PROMPT, UNIVERSAL_ASSIST_PROMPT,
-  CUSTOM_SYSTEM_PROMPT, CUSTOM_ANSWER_PROMPT, CUSTOM_WHAT_TO_ANSWER_PROMPT,
-  CUSTOM_RECAP_PROMPT, CUSTOM_FOLLOWUP_PROMPT, CUSTOM_FOLLOW_UP_QUESTIONS_PROMPT, CUSTOM_ASSIST_PROMPT
-} from "./llm/prompts"
-import { deepVariableReplacer, getByPath, injectImageIntoMessages } from './utils/curlUtils';
-import curl2Json from "@bany/curl-to-json";
+import { HARD_SYSTEM_PROMPT, GROQ_SYSTEM_PROMPT } from "./llm/prompts"
 import { CustomProvider, CurlProvider } from './services/CredentialsManager';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import axios from 'axios';
-import { createProviderRateLimiters, RateLimiter } from './services/RateLimiter';
-import { TokenUsageTracker } from './services/TokenUsageTracker';
 import { appEvents, isQuotaExhaustedError } from './appEvents';
-const execAsync = promisify(exec);
 
-interface OllamaResponse {
-  response: string
-  done: boolean
-}
-
-// Model constant for Gemini 3 Flash
+// Logical model constants used to normalise UI model ids in setModel().
 const GEMINI_FLASH_MODEL = "gemini-3.1-flash-lite"
 const GEMINI_PRO_MODEL = "gemini-3.1-pro-preview"
 const GROQ_MODEL = "llama-3.3-70b-versatile"
-// OpenAI client slot is routed to Netmind (OpenAI-compatible) for chat completions.
-// STT, embeddings, and realtime audio still hit api.openai.com via their own code paths.
-const OPENAI_BASE_URL = "https://api.netmind.ai/inference-api/openai/v1"
 const OPENAI_MODEL = "deepseek-ai/DeepSeek-V4-Flash"
 const CLAUDE_MODEL = "claude-sonnet-4-6"
-const MAX_OUTPUT_TOKENS = 65536
-// Output cap for the Netmind (OpenAI-compatible) chat slot.
-// This app is single-turn with short answers — prompts force 2-4 sentences for
-// non-coding and a full code block for coding (rarely >2-3k tokens). OpenAI-compatible
-// inference backends (vLLM/SGLang) pre-allocate KV cache from max_tokens for scheduling,
-// so sending MAX_OUTPUT_TOKENS (65536) needlessly inflates time-to-first-token on Netmind.
-// 4096 leaves comfortable headroom for the longest coding answer while cutting latency.
-const NETMIND_MAX_OUTPUT_TOKENS = 4096
-const CLAUDE_MAX_OUTPUT_TOKENS = 64000
-const GROQ_TEXT_MAX_OUTPUT_TOKENS = 2048
-const GROQ_FAST_TEXT_MAX_OUTPUT_TOKENS = 768
 
-// Simple prompt for image analysis (not interview copilot - kept separate)
+// Simple prompt for image analysis (vision ops route through the gateway).
 const IMAGE_ANALYSIS_PROMPT = `Analyze concisely. Be direct. No markdown formatting. Return plain text only.`
 
 export class LLMHelper {

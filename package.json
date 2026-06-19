@@ -177,7 +177,6 @@
     "wait-on": "^8.0.1"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.74.0",
     "@bany/curl-to-json": "^1.2.10",
     "@deepgram/sdk": "^3.13.0",
     "@elevenlabs/client": "^0.15.1",
@@ -202,7 +201,6 @@
     "electron-updater": "^6.7.3",
     "form-data": "^4.0.1",
     "framer-motion": "^12.29.2",
-    "groq-sdk": "^0.37.0",
     "i18next": "^26.3.1",
     "i18next-browser-languagedetector": "^8.2.1",
     "jspdf": "^4.0.0",
@@ -210,7 +208,6 @@
     "keytar": "^7.9.0",
     "lucide-react": "^0.460.0",
     "mammoth": "^1.11.0",
-    "openai": "^6.22.0",
     "pdf-parse": "^2.4.5",
     "react": "^18.3.1",
     "react-code-blocks": "^0.1.6",
