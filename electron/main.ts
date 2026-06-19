@@ -537,11 +537,11 @@ export class AppState {
           // Re-resolve the embedding provider given that Ollama might now be available
           if (this.ragManager) {
              console.log('[AppState] Ollama model ready, re-evaluating RAG pipeline provider');
-             const { CredentialsManager } = require('./services/CredentialsManager');
-             const cm = CredentialsManager.getInstance();
+             // Cloud-only for LLM keys: embeddings prefer the backend gateway; env vars
+             // remain a dev convenience for the (separate) local embedding providers.
              this.ragManager.initializeEmbeddings({
-                openaiKey: cm.getOpenaiApiKey() || process.env.OPENAI_API_KEY || undefined,
-                geminiKey: cm.getGeminiApiKey() || process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || undefined,
+                openaiKey: process.env.OPENAI_API_KEY || undefined,
+                geminiKey: process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || undefined,
                 ollamaUrl: process.env.OLLAMA_URL || "http://localhost:11434"
              });
           }
@@ -558,11 +558,11 @@ export class AppState {
       const sqliteDb = db.getDb();
 
       if (sqliteDb) {
-        const { CredentialsManager } = require('./services/CredentialsManager');
-        const cm = CredentialsManager.getInstance();
-        const openaiKey = cm.getOpenaiApiKey() || process.env.OPENAI_API_KEY;
-        const geminiKey = cm.getGeminiApiKey() || process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
-        
+        // Cloud-only for LLM keys: embeddings prefer the backend gateway; env vars
+        // remain a dev convenience for the (separate) local embedding providers.
+        const openaiKey = process.env.OPENAI_API_KEY;
+        const geminiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
+
         this.ragManager = new RAGManager({
             openaiKey,
             geminiKey,
@@ -1562,9 +1562,8 @@ export class AppState {
       const { CredentialsManager } = require('./services/CredentialsManager');
       const cm = CredentialsManager.getInstance();
       const defaultModel = cm.getDefaultModel();
-      const all = [...(cm.getCurlProviders() || []), ...(cm.getCustomProviders() || [])];
       console.log(`[Main] Reverting model to default: ${defaultModel}`);
-      this.processingHelper.getLLMHelper().setModel(defaultModel, all);
+      this.processingHelper.getLLMHelper().setModel(defaultModel);
       BrowserWindow.getAllWindows().forEach(win => {
         if (!win.isDestroyed()) win.webContents.send('model-changed', defaultModel);
       });

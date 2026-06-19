@@ -730,53 +730,18 @@ export function initializeIpcHandlers(appState: AppState): void {
       throw error;
     }
   });
-  // Get stored API keys (masked for UI display)
+  // Cloud-only: the app stores no LLM/STT provider keys. Returns only the STT
+  // on/off toggle and the Tavily (web-search) key presence.
   safeHandle("get-stored-credentials", async () => {
     try {
       const { CredentialsManager } = require('./services/CredentialsManager');
       const creds = CredentialsManager.getInstance().getAllCredentials();
-
-      // Return masked versions for security (just indicate if set)
-      const hasKey = (key?: string) => !!(key && key.trim().length > 0);
-      const hasConfiguredKey = (storedKey?: string, envKey?: string) =>
-        hasKey(storedKey) || hasKey(envKey);
-
       return {
-        hasGeminiKey: hasConfiguredKey(creds.geminiApiKey, process.env.GEMINI_API_KEY),
-        hasGroqKey: hasConfiguredKey(creds.groqApiKey, process.env.GROQ_API_KEY),
-        hasOpenaiKey: hasConfiguredKey(creds.openaiApiKey, process.env.OPENAI_API_KEY),
-        hasClaudeKey: hasConfiguredKey(creds.claudeApiKey, process.env.CLAUDE_API_KEY),
-        googleServiceAccountPath: creds.googleServiceAccountPath || null,
-        sttProvider: creds.sttProvider || 'none',
-        groqSttModel: creds.groqSttModel || 'whisper-large-v3-turbo',
-        hasSttGroqKey: hasKey(creds.groqSttApiKey),
-        hasSttOpenaiKey: hasKey(creds.openAiSttApiKey),
-        hasDeepgramKey: hasKey(creds.deepgramApiKey),
-        hasElevenLabsKey: hasKey(creds.elevenLabsApiKey),
-        hasAzureKey: hasKey(creds.azureApiKey),
-        azureRegion: creds.azureRegion || 'eastus',
-        hasIbmWatsonKey: hasKey(creds.ibmWatsonApiKey),
-        ibmWatsonRegion: creds.ibmWatsonRegion || 'us-south',
-        hasSonioxKey: hasKey(creds.sonioxApiKey),
-        // STT key values — returned so the settings UI can pre-populate input fields.
-        // AI model keys (Gemini/Groq/OpenAI/Claude) remain boolean-only; STT keys are
-        // surfaced here because users need to see which key is active when switching providers.
-        sttGroqKey: creds.groqSttApiKey || '',
-        sttOpenaiKey: creds.openAiSttApiKey || '',
-        sttDeepgramKey: creds.deepgramApiKey || '',
-        sttElevenLabsKey: creds.elevenLabsApiKey || '',
-        sttAzureKey: creds.azureApiKey || '',
-        sttIbmKey: creds.ibmWatsonApiKey || '',
-        sttSonioxKey: creds.sonioxApiKey || '',
-        hasTavilyKey: hasKey(creds.tavilyApiKey),
-        // Dynamic Model Discovery - preferred models
-        geminiPreferredModel: creds.geminiPreferredModel || undefined,
-        groqPreferredModel: creds.groqPreferredModel || undefined,
-        openaiPreferredModel: creds.openaiPreferredModel || undefined,
-        claudePreferredModel: creds.claudePreferredModel || undefined,
+        sttProvider: creds.sttProvider || 'deepgram',
+        hasTavilyKey: !!(creds.tavilyApiKey && creds.tavilyApiKey.trim().length > 0),
       };
-    } catch (error: any) {
-      return { hasGeminiKey: false, hasGroqKey: false, hasOpenaiKey: false, hasClaudeKey: false, googleServiceAccountPath: null, sttProvider: 'none', groqSttModel: 'whisper-large-v3-turbo', hasSttGroqKey: false, hasSttOpenaiKey: false, hasDeepgramKey: false, hasElevenLabsKey: false, hasAzureKey: false, azureRegion: 'eastus', hasIbmWatsonKey: false, ibmWatsonRegion: 'us-south', hasSonioxKey: false, hasTavilyKey: false, sttGroqKey: '', sttOpenaiKey: '', sttDeepgramKey: '', sttElevenLabsKey: '', sttAzureKey: '', sttIbmKey: '', sttSonioxKey: '' };
+    } catch {
+      return { sttProvider: 'deepgram', hasTavilyKey: false };
     }
   });
   // Helper to sanitize error messages (remove API key references)
@@ -787,15 +752,7 @@ export function initializeIpcHandlers(appState: AppState): void {
   safeHandle("set-model", async (_, modelId: string) => {
     try {
       const llmHelper = appState.processingHelper.getLLMHelper();
-      const { CredentialsManager } = require('./services/CredentialsManager');
-      const cm = CredentialsManager.getInstance();
-
-      // Get all providers (Curl + Custom)
-      const curlProviders = cm.getCurlProviders();
-      const legacyProviders = cm.getCustomProviders() || [];
-      const allProviders = [...curlProviders, ...legacyProviders];
-
-      llmHelper.setModel(modelId, allProviders);
+      llmHelper.setModel(modelId);
 
       // Close the selector window if open
       appState.modelSelectorWindowHelper.hideWindow();
@@ -823,10 +780,7 @@ export function initializeIpcHandlers(appState: AppState): void {
 
       // Also update the runtime model
       const llmHelper = appState.processingHelper.getLLMHelper();
-      const curlProviders = cm.getCurlProviders();
-      const legacyProviders = cm.getCustomProviders() || [];
-      const allProviders = [...curlProviders, ...legacyProviders];
-      llmHelper.setModel(modelId, allProviders);
+      llmHelper.setModel(modelId);
 
       // Close the selector window if open
       appState.modelSelectorWindowHelper.hideWindow();

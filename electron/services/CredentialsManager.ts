@@ -9,6 +9,8 @@ import path from 'path';
 
 const CREDENTIALS_PATH = path.join(app.getPath('userData'), 'credentials.enc');
 
+// Legacy shape kept only so the LLMHelper.setModel signature and any persisted
+// blobs still type-check. Custom/curl provider selection is no longer supported.
 export interface CustomProvider {
     id: string;
     name: string;
@@ -19,39 +21,18 @@ export interface CurlProvider {
     id: string;
     name: string;
     curlCommand: string;
-    responsePath: string; // e.g. "choices[0].message.content"
+    responsePath: string;
 }
 
 export interface StoredCredentials {
-    geminiApiKey?: string;
-    groqApiKey?: string;
-    openaiApiKey?: string;
-    claudeApiKey?: string;
-    googleServiceAccountPath?: string;
-    customProviders?: CustomProvider[];
-    curlProviders?: CurlProvider[];
     defaultModel?: string;
-    // STT Provider settings
-    sttProvider?: 'none' | 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox';
-    groqSttApiKey?: string;
-    groqSttModel?: string;
-    openAiSttApiKey?: string;
-    deepgramApiKey?: string;
-    elevenLabsApiKey?: string;
-    azureApiKey?: string;
-    azureRegion?: string;
-    ibmWatsonApiKey?: string;
-    ibmWatsonRegion?: string;
-    sonioxApiKey?: string;
+    // STT on/off. Cloud-only: transcription always runs through the backend
+    // Deepgram WS relay (platform key); 'none' disables it.
+    sttProvider?: 'none' | 'deepgram';
     sttLanguage?: string;
     aiResponseLanguage?: string;
-    // Tavily Search
+    // Tavily Search (web search — not an LLM/STT provider key)
     tavilyApiKey?: string;
-    // Dynamic Model Discovery – preferred models per provider
-    geminiPreferredModel?: string;
-    groqPreferredModel?: string;
-    openaiPreferredModel?: string;
-    claudePreferredModel?: string;
 }
 
 export class CredentialsManager {
@@ -82,72 +63,8 @@ export class CredentialsManager {
     // Getters
     // =========================================================================
 
-    public getGeminiApiKey(): string | undefined {
-        return this.credentials.geminiApiKey;
-    }
-
-    public getGroqApiKey(): string | undefined {
-        return this.credentials.groqApiKey;
-    }
-
-    public getOpenaiApiKey(): string | undefined {
-        return this.credentials.openaiApiKey;
-    }
-
-    public getClaudeApiKey(): string | undefined {
-        return this.credentials.claudeApiKey;
-    }
-
-    public getGoogleServiceAccountPath(): string | undefined {
-        return this.credentials.googleServiceAccountPath;
-    }
-
-    public getCustomProviders(): CustomProvider[] {
-        return this.credentials.customProviders || [];
-    }
-
-    public getSttProvider(): 'none' | 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox' {
-        return this.credentials.sttProvider || 'none';
-    }
-
-    public getDeepgramApiKey(): string | undefined {
-        return this.credentials.deepgramApiKey;
-    }
-
-    public getGroqSttApiKey(): string | undefined {
-        return this.credentials.groqSttApiKey;
-    }
-
-    public getGroqSttModel(): string {
-        return this.credentials.groqSttModel || 'whisper-large-v3-turbo';
-    }
-
-    public getOpenAiSttApiKey(): string | undefined {
-        return this.credentials.openAiSttApiKey;
-    }
-
-    public getElevenLabsApiKey(): string | undefined {
-        return this.credentials.elevenLabsApiKey;
-    }
-
-    public getAzureApiKey(): string | undefined {
-        return this.credentials.azureApiKey;
-    }
-
-    public getAzureRegion(): string {
-        return this.credentials.azureRegion || 'eastus';
-    }
-
-    public getIbmWatsonApiKey(): string | undefined {
-        return this.credentials.ibmWatsonApiKey;
-    }
-
-    public getIbmWatsonRegion(): string {
-        return this.credentials.ibmWatsonRegion || 'us-south';
-    }
-
-    public getSonioxApiKey(): string | undefined {
-        return this.credentials.sonioxApiKey;
+    public getSttProvider(): 'none' | 'deepgram' {
+        return this.credentials.sttProvider || 'deepgram';
     }
 
     public getTavilyApiKey(): string | undefined {
@@ -175,100 +92,10 @@ export class CredentialsManager {
     // Setters (auto-save)
     // =========================================================================
 
-    public setGeminiApiKey(key: string): void {
-        this.credentials.geminiApiKey = key;
-        this.saveCredentials();
-        console.log('[CredentialsManager] Gemini API Key updated');
-    }
-
-    public setGroqApiKey(key: string): void {
-        this.credentials.groqApiKey = key;
-        this.saveCredentials();
-        console.log('[CredentialsManager] Groq API Key updated');
-    }
-
-    public setOpenaiApiKey(key: string): void {
-        this.credentials.openaiApiKey = key;
-        this.saveCredentials();
-        console.log('[CredentialsManager] OpenAI API Key updated');
-    }
-
-    public setClaudeApiKey(key: string): void {
-        this.credentials.claudeApiKey = key;
-        this.saveCredentials();
-        console.log('[CredentialsManager] Claude API Key updated');
-    }
-
-    public setGoogleServiceAccountPath(filePath: string): void {
-        this.credentials.googleServiceAccountPath = filePath;
-        this.saveCredentials();
-        console.log('[CredentialsManager] Google Service Account path updated');
-    }
-
-    public setSttProvider(provider: 'none' | 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox'): void {
+    public setSttProvider(provider: 'none' | 'deepgram'): void {
         this.credentials.sttProvider = provider;
         this.saveCredentials();
-        console.log(`[CredentialsManager] STT Provider set to: ${provider}`);
-    }
-
-    public setDeepgramApiKey(key: string): void {
-        this.credentials.deepgramApiKey = key;
-        this.saveCredentials();
-        console.log('[CredentialsManager] Deepgram API Key updated');
-    }
-
-    public setGroqSttApiKey(key: string): void {
-        this.credentials.groqSttApiKey = key;
-        this.saveCredentials();
-        console.log('[CredentialsManager] Groq STT API Key updated');
-    }
-
-    public setOpenAiSttApiKey(key: string): void {
-        this.credentials.openAiSttApiKey = key;
-        this.saveCredentials();
-        console.log('[CredentialsManager] OpenAI STT API Key updated');
-    }
-
-    public setGroqSttModel(model: string): void {
-        this.credentials.groqSttModel = model;
-        this.saveCredentials();
-        console.log(`[CredentialsManager] Groq STT Model set to: ${model}`);
-    }
-
-    public setElevenLabsApiKey(key: string): void {
-        this.credentials.elevenLabsApiKey = key;
-        this.saveCredentials();
-        console.log('[CredentialsManager] ElevenLabs API Key updated');
-    }
-
-    public setAzureApiKey(key: string): void {
-        this.credentials.azureApiKey = key;
-        this.saveCredentials();
-        console.log('[CredentialsManager] Azure API Key updated');
-    }
-
-    public setAzureRegion(region: string): void {
-        this.credentials.azureRegion = region;
-        this.saveCredentials();
-        console.log(`[CredentialsManager] Azure Region set to: ${region}`);
-    }
-
-    public setIbmWatsonApiKey(key: string): void {
-        this.credentials.ibmWatsonApiKey = key;
-        this.saveCredentials();
-        console.log('[CredentialsManager] IBM Watson API Key updated');
-    }
-
-    public setIbmWatsonRegion(region: string): void {
-        this.credentials.ibmWatsonRegion = region;
-        this.saveCredentials();
-        console.log(`[CredentialsManager] IBM Watson Region set to: ${region}`);
-    }
-
-    public setSonioxApiKey(key: string): void {
-        this.credentials.sonioxApiKey = key;
-        this.saveCredentials();
-        console.log('[CredentialsManager] Soniox API Key updated');
+        console.log(`[CredentialsManager] STT enabled = ${provider !== 'none'}`);
     }
 
     public setTavilyApiKey(key: string): void {
@@ -293,65 +120,6 @@ export class CredentialsManager {
         this.credentials.defaultModel = model;
         this.saveCredentials();
         console.log(`[CredentialsManager] Default Model set to: ${model}`);
-    }
-
-    public getPreferredModel(provider: 'gemini' | 'groq' | 'openai' | 'claude'): string | undefined {
-        const key = `${provider}PreferredModel` as keyof StoredCredentials;
-        return this.credentials[key] as string | undefined;
-    }
-
-    public setPreferredModel(provider: 'gemini' | 'groq' | 'openai' | 'claude', modelId: string): void {
-        const key = `${provider}PreferredModel` as keyof StoredCredentials;
-        (this.credentials as any)[key] = modelId;
-        this.saveCredentials();
-        console.log(`[CredentialsManager] ${provider} preferred model set to: ${modelId}`);
-    }
-
-    public saveCustomProvider(provider: CustomProvider): void {
-        if (!this.credentials.customProviders) {
-            this.credentials.customProviders = [];
-        }
-        // Check if exists, update if so
-        const index = this.credentials.customProviders.findIndex(p => p.id === provider.id);
-        if (index !== -1) {
-            this.credentials.customProviders[index] = provider;
-        } else {
-            this.credentials.customProviders.push(provider);
-        }
-        this.saveCredentials();
-        console.log(`[CredentialsManager] Custom Provider '${provider.name}' saved`);
-    }
-
-    public deleteCustomProvider(id: string): void {
-        if (!this.credentials.customProviders) return;
-        this.credentials.customProviders = this.credentials.customProviders.filter(p => p.id !== id);
-        this.saveCredentials();
-        console.log(`[CredentialsManager] Custom Provider '${id}' deleted`);
-    }
-
-    public getCurlProviders(): CurlProvider[] {
-        return this.credentials.curlProviders || [];
-    }
-
-    public saveCurlProvider(provider: CurlProvider): void {
-        if (!this.credentials.curlProviders) {
-            this.credentials.curlProviders = [];
-        }
-        const index = this.credentials.curlProviders.findIndex(p => p.id === provider.id);
-        if (index !== -1) {
-            this.credentials.curlProviders[index] = provider;
-        } else {
-            this.credentials.curlProviders.push(provider);
-        }
-        this.saveCredentials();
-        console.log(`[CredentialsManager] Curl Provider '${provider.name}' saved`);
-    }
-
-    public deleteCurlProvider(id: string): void {
-        if (!this.credentials.curlProviders) return;
-        this.credentials.curlProviders = this.credentials.curlProviders.filter(p => p.id !== id);
-        this.saveCredentials();
-        console.log(`[CredentialsManager] Curl Provider '${id}' deleted`);
     }
 
     public clearAll(): void {
