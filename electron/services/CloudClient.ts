@@ -259,6 +259,58 @@ export class CloudClient {
     return this.post(`/llm/embeddings`, model ? { texts, model } : { texts })
   }
 
+  /** Stream chat tokens from the backend gateway (SSE). Yields text deltas. */
+  async *streamLLM(body: {
+    model: string
+    messages: { role: string; content: string }[]
+    images?: string[]
+    max_tokens?: number
+    temperature?: number
+  }): AsyncGenerator<string, void, unknown> {
+    const token = await this.accessToken()
+    const resp = await fetch(`${backendUrl()}/llm/chat`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    })
+    if (resp.status === 401) throw new CloudError(401, "not authenticated")
+    if (resp.status === 402) throw new CloudError(402, "quota exhausted")
+    if (!resp.ok || !resp.body) throw new CloudError(resp.status, `stream failed: ${resp.status}`)
+
+    const reader = (resp.body as ReadableStream<Uint8Array>).getReader()
+    const decoder = new TextDecoder()
+    let buf = ""
+    try {
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        const lines = buf.split("\n")
+        buf = lines.pop() ?? ""
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue
+          const data = line.slice(6).trim()
+          if (data === "[DONE]") return
+          let obj: { delta?: string; error?: { message?: string } }
+          try { obj = JSON.parse(data) } catch { continue }
+          if (obj.error) throw new CloudError(502, obj.error?.message || "stream error")
+          if (typeof obj.delta === "string") yield obj.delta
+        }
+      }
+    } finally {
+      try { reader.releaseLock() } catch { /* ignore */ }
+    }
+  }
+
+  /** Non-streaming structured JSON generation via the gateway. */
+  async llmJson(body: {
+    model: string
+    messages: { role: string; content: string }[]
+    images?: string[]
+  }): Promise<{ text: string }> {
+    return this.post(`/llm/json`, body)
+  }
+
   // --------------------------------------------------------------------- //
   // Modes                                                                 //
   // --------------------------------------------------------------------- //
