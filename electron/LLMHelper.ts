@@ -53,234 +53,38 @@ const GROQ_FAST_TEXT_MAX_OUTPUT_TOKENS = 768
 const IMAGE_ANALYSIS_PROMPT = `Analyze concisely. Be direct. No markdown formatting. Return plain text only.`
 
 export class LLMHelper {
-  private client: GoogleGenAI | null = null
-  private groqClient: Groq | null = null
-  private openaiClient: OpenAI | null = null
-  private claudeClient: Anthropic | null = null
-  private apiKey: string | null = null
-  private groqApiKey: string | null = null
-  private openaiApiKey: string | null = null
-  private claudeApiKey: string | null = null
-  private useOllama: boolean = false
-  private ollamaModel: string = "llama3.2"
-  private ollamaUrl: string = "http://localhost:11434"
-  private ollamaStartedByApp: boolean = false;
-  private geminiModel: string = GEMINI_FLASH_MODEL
-  private customProvider: CustomProvider | null = null;
-  private activeCurlProvider: CurlProvider | null = null;
-  private groqFastTextMode: boolean = false;
   private knowledgeOrchestrator: any = null;
   private profileManager: any = null;
   private customNotes: string = '';
   private aiResponseLanguage: string = 'auto';
   private sttLanguage: string = 'english-us';
 
-  // Rate limiters per provider to prevent 429 errors on free tiers
-  private rateLimiters: ReturnType<typeof createProviderRateLimiters>;
+  // Cloud-only: every LLM call routes through the backend gateway (CloudClient,
+  // authenticated). The desktop process holds no provider SDK clients or API keys.
+  constructor() {}
 
-  // Self-improving model version manager for vision analysis
-  private modelVersionManager: ModelVersionManager;
-
-  constructor(apiKey?: string, useOllama: boolean = false, ollamaModel?: string, ollamaUrl?: string, groqApiKey?: string, openaiApiKey?: string, claudeApiKey?: string) {
-    this.useOllama = useOllama
-
-    // Initialize rate limiters
-    this.rateLimiters = createProviderRateLimiters();
-
-    // Initialize model version manager
-    this.modelVersionManager = new ModelVersionManager();
-
-    // Initialize Groq client if API key provided
-    if (groqApiKey) {
-      this.groqApiKey = groqApiKey
-      this.groqClient = new Groq({ apiKey: groqApiKey })
-      console.log(`[LLMHelper] Groq client initialized with model: ${GROQ_MODEL}`)
-    }
-
-    // Initialize OpenAI-compatible client (routed to Netmind) if Netmind key in env
-    // Falls back to the passed openaiApiKey only if NETMIND_API_KEY is absent.
-    const netmindKey = process.env.NETMIND_API_KEY
-    const chatKey = netmindKey || openaiApiKey
-    if (chatKey) {
-      this.openaiApiKey = chatKey
-      this.openaiClient = new OpenAI({ apiKey: chatKey, baseURL: OPENAI_BASE_URL })
-      console.log(`[LLMHelper] Chat client initialized (${netmindKey ? 'Netmind' : 'OpenAI key fallback'}) with model: ${OPENAI_MODEL}`)
-    }
-
-    // Initialize Claude client if API key provided
-    if (claudeApiKey) {
-      this.claudeApiKey = claudeApiKey
-      this.claudeClient = new Anthropic({ apiKey: claudeApiKey })
-      console.log(`[LLMHelper] Claude client initialized with model: ${CLAUDE_MODEL}`)
-    }
-
-    if (useOllama) {
-      this.ollamaUrl = ollamaUrl || "http://localhost:11434"
-      this.ollamaModel = ollamaModel || "gemma:latest" // Default fallback
-    } else if (apiKey) {
-      this.apiKey = apiKey
-      // Initialize with v1alpha API version for Gemini 3 support
-      this.client = new GoogleGenAI({
-        apiKey: apiKey,
-        httpOptions: { apiVersion: "v1alpha" }
-      })
-      // console.log(`[LLMHelper] Using Google Gemini 3 with model: ${this.geminiModel} (v1alpha API)`)
-    } else {
-      console.warn("[LLMHelper] No API key provided. Client will be uninitialized until key is set.")
-    }
-  }
-
-  public setApiKey(apiKey: string) {
-    this.apiKey = apiKey;
-    this.client = new GoogleGenAI({
-      apiKey: apiKey,
-      httpOptions: { apiVersion: "v1alpha" }
-    })
-    console.log("[LLMHelper] Gemini API Key updated.");
-  }
-
-  public setGroqApiKey(apiKey: string) {
-    this.groqClient = new Groq({ apiKey });
-    console.log("[LLMHelper] Groq API Key updated.");
-  }
-
-  public setOpenaiApiKey(apiKey: string) {
-    // The chat client slot is bound to Netmind via NETMIND_API_KEY in env.
-    // If env key is missing, fall back to the provided OpenAI key against the same base URL
-    // (works only if the URL is OpenAI-compatible — i.e. user has overridden NETMIND_API_KEY).
-    const key = process.env.NETMIND_API_KEY || apiKey;
-    this.openaiApiKey = key;
-    this.openaiClient = new OpenAI({ apiKey: key, baseURL: OPENAI_BASE_URL });
-    console.log("[LLMHelper] Chat client key updated.");
-  }
-
-  public setClaudeApiKey(apiKey: string) {
-    this.claudeApiKey = apiKey;
-    this.claudeClient = new Anthropic({ apiKey });
-    console.log("[LLMHelper] Claude API Key updated.");
-  }
-
-  /**
-   * Initialize the self-improving model version manager.
-   * Should be called after all API keys are configured.
-   * Triggers initial model discovery and starts background scheduler.
-   */
-  public async initModelVersionManager(): Promise<void> {
-    this.modelVersionManager.setApiKeys({
-      openai: this.openaiApiKey,
-      gemini: this.apiKey,
-      claude: this.claudeApiKey,
-      groq: this.groqApiKey,
-    });
-    await this.modelVersionManager.initialize();
-    console.log(this.modelVersionManager.getSummary());
-  }
-
-  /**
-   * Scrub all API keys from memory to minimize exposure window.
-   * Called on app quit.
-   */
-  public scrubKeys(): void {
-    this.apiKey = null;
-    this.groqApiKey = null;
-    this.openaiApiKey = null;
-    this.claudeApiKey = null;
-    this.client = null;
-    this.groqClient = null;
-    this.openaiClient = null;
-    this.claudeClient = null;
-    // Destroy rate limiters
-    if (this.rateLimiters) {
-      Object.values(this.rateLimiters).forEach(rl => rl.destroy());
-    }
-    // Stop model version manager background scheduler
-    this.modelVersionManager.stopScheduler();
-    console.log('[LLMHelper] Keys scrubbed from memory');
-  }
-
-  public setGroqFastTextMode(enabled: boolean) {
-    this.groqFastTextMode = enabled;
-    console.log(`[LLMHelper] Groq Fast Text Mode: ${enabled}`);
-  }
-
-  public getGroqFastTextMode(): boolean {
-    return this.groqFastTextMode;
-  }
+  /** No-op retained for app-quit call sites: no in-memory provider keys to scrub. */
+  public scrubKeys(): void {}
 
   public getAiResponseLanguage(): string {
     return this.aiResponseLanguage;
-  }
-
-  // --- Model Type Checkers ---
-  private isOpenAiModel(modelId: string): boolean {
-    // Includes Netmind-hosted models (deepseek-ai/*) — they ride the OpenAI-compatible chat client.
-    return modelId.startsWith("gpt-") || modelId.startsWith("o1-") || modelId.startsWith("o3-") || modelId.includes("openai") || modelId.startsWith("deepseek-ai/");
-  }
-
-  private isClaudeModel(modelId: string): boolean {
-    return modelId.startsWith("claude-");
-  }
-
-  private isGroqModel(modelId: string): boolean {
-    return modelId.startsWith("llama-") || modelId.startsWith("mixtral-") || modelId.startsWith("gemma-") || modelId.startsWith("meta-llama/") || modelId.startsWith("qwen/") || modelId.startsWith("qwen-");
-  }
-
-  private isGeminiModel(modelId: string): boolean {
-    return modelId.startsWith("gemini-") || modelId.startsWith("models/");
   }
   // ---------------------------
 
   private currentModelId: string = GEMINI_FLASH_MODEL;
 
-  public setModel(modelId: string, customProviders: (CustomProvider | CurlProvider)[] = []) {
-    // Map UI short codes to internal Model IDs
+  public setModel(modelId: string, _customProviders: (CustomProvider | CurlProvider)[] = []) {
+    // Cloud-only: map UI short codes to logical model ids; toLogicalModel() handles
+    // the gateway routing. Local/Ollama/custom provider selection is no longer supported.
     let targetModelId = modelId;
     if (modelId === 'gemini') targetModelId = GEMINI_FLASH_MODEL;
     if (modelId === 'gemini-pro') targetModelId = GEMINI_PRO_MODEL;
     if (modelId === 'claude') targetModelId = CLAUDE_MODEL;
     if (modelId === 'llama') targetModelId = GROQ_MODEL;
-    // OpenAI slot is now routed to Netmind. Any persisted gpt-* / o1- / o3- value
-    // is rewritten to the Netmind-hosted model so stale settings don't hit
-    // api.netmind.ai with an unknown model id.
     if (/^gpt-|^o1-|^o3-/.test(targetModelId)) targetModelId = OPENAI_MODEL;
-
-    if (targetModelId.startsWith('ollama-')) {
-      this.useOllama = true;
-      this.ollamaModel = targetModelId.replace('ollama-', '');
-      this.customProvider = null;
-      this.activeCurlProvider = null;
-      console.log(`[LLMHelper] Switched to Ollama: ${this.ollamaModel}`);
-      return;
-    }
-
-    const custom = customProviders.find(p => p.id === targetModelId);
-    if (custom) {
-      this.useOllama = false;
-      this.customProvider = custom;
-      this.activeCurlProvider = null;
-      console.log(`[LLMHelper] Switched to Custom Provider: ${custom.name}`);
-      return;
-    }
-
-    // Standard Cloud Models
-    this.useOllama = false;
-    this.customProvider = null;
     this.currentModelId = targetModelId;
-
-    // Update specific model props if needed
-    if (targetModelId === GEMINI_PRO_MODEL) this.geminiModel = GEMINI_PRO_MODEL;
-    if (targetModelId === GEMINI_FLASH_MODEL) this.geminiModel = GEMINI_FLASH_MODEL;
-
-    console.log(`[LLMHelper] Switched to Cloud Model: ${targetModelId}`);
+    console.log(`[LLMHelper] Model set to: ${targetModelId}`);
   }
-
-  public switchToCurl(provider: CurlProvider) {
-    this.useOllama = false;
-    this.customProvider = null;
-    this.activeCurlProvider = provider;
-    console.log(`[LLMHelper] Switched to cURL provider: ${provider.name}`);
-  }
-
   private cleanJsonResponse(text: string): string {
     // Remove markdown code block syntax if present
     text = text.replace(/^```(?:json)?\n/, '').replace(/\n```$/, '');
@@ -549,138 +353,30 @@ ANSWER DIRECTLY:`;
    * Used by ProfileManager to extract structured resume / JD data.
    */
   public async generateJson<T = any>(systemPrompt: string, userPrompt: string): Promise<T> {
-    const errors: string[] = [];
-
-    const tryParse = (raw: string): T => {
-      let s = (raw || '').trim();
-      const fenceMatch = s.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-      if (fenceMatch) s = fenceMatch[1].trim();
-      const firstBrace = s.search(/[\[{]/);
-      if (firstBrace > 0) s = s.slice(firstBrace);
-      return JSON.parse(s) as T;
-    };
-
-    const pickOpenAiModel = (): string => {
-      if (this.isOpenAiModel(this.currentModelId)) return this.currentModelId;
-      try {
-        const tier1 = this.modelVersionManager.getTextTieredModels(TextModelFamily.OPENAI).tier1;
-        if (tier1) return tier1;
-      } catch { /* fall through */ }
-      return 'gpt-4o-mini';
-    };
-    const pickClaudeModel = (): string => {
-      if (this.isClaudeModel(this.currentModelId)) return this.currentModelId;
-      try {
-        const tier1 = this.modelVersionManager.getTextTieredModels(TextModelFamily.CLAUDE).tier1;
-        if (tier1) return tier1;
-      } catch { /* fall through */ }
-      return CLAUDE_MODEL;
-    };
-
-    console.log('[LLMHelper.generateJson] start. clients available:', {
-      openai: !!this.openaiClient,
-      claude: !!this.claudeClient,
-      gemini: !!this.client,
-      groq: !!this.groqClient,
-    });
-
-    if (this.openaiClient) {
-      const model = pickOpenAiModel();
-      console.log(`[LLMHelper.generateJson] -> OpenAI (${model})`);
-      try {
-        const resp = await this.withTimeout(
-          this.openaiClient.chat.completions.create({
-            model,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-            response_format: { type: 'json_object' },
-            max_completion_tokens: 8192,
-          }),
-          90000,
-          `OpenAI (${model})`
-        );
-        try { TokenUsageTracker.recordFromResponse('openai', model, resp); } catch {}
-        const raw = resp.choices[0]?.message?.content || '';
-        console.log(`[LLMHelper.generateJson] OpenAI returned ${raw.length} chars`);
-        return tryParse(raw);
-      } catch (e: any) {
-        console.warn(`[LLMHelper.generateJson] OpenAI failed: ${e.message}`);
-        errors.push(`OpenAI(${model}): ${e.message}`);
+    // Cloud-only: structured JSON via the metered backend gateway (/llm/json).
+    const { CloudClient } = require('./services/CloudClient');
+    let res: { text: string };
+    try {
+      res = await CloudClient.getInstance().llmJson({
+        model: this.toLogicalModel(this.currentModelId),
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+      });
+    } catch (err) {
+      if (isQuotaExhaustedError(err)) {
+        appEvents.emit('quota-exhausted', { source: 'json', message: (err as Error)?.message });
       }
+      throw err;
     }
-
-    if (this.claudeClient) {
-      const model = pickClaudeModel();
-      console.log(`[LLMHelper.generateJson] -> Claude (${model})`);
-      try {
-        const resp = await this.withTimeout(
-          this.claudeClient.messages.create({
-            model,
-            max_tokens: 8192,
-            system: systemPrompt + '\n\nReturn ONLY the JSON object. No prose.',
-            messages: [{ role: 'user', content: userPrompt }],
-          }),
-          90000,
-          `Claude (${model})`
-        );
-        try { TokenUsageTracker.recordFromResponse('anthropic', model, resp); } catch {}
-        const block: any = (resp as any).content?.[0];
-        const raw = block?.type === 'text' ? block.text : '';
-        console.log(`[LLMHelper.generateJson] Claude returned ${raw.length} chars`);
-        return tryParse(raw);
-      } catch (e: any) {
-        console.warn(`[LLMHelper.generateJson] Claude failed: ${e.message}`);
-        errors.push(`Claude(${model}): ${e.message}`);
-      }
-    }
-
-    if (this.client) {
-      console.log('[LLMHelper.generateJson] -> Gemini');
-      try {
-        const resp = await this.client.models.generateContent({
-          model: GEMINI_FLASH_MODEL,
-          contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
-          config: { responseMimeType: 'application/json' } as any,
-        });
-        try { TokenUsageTracker.recordFromResponse('gemini', GEMINI_FLASH_MODEL, resp); } catch {}
-        const raw = (resp as any).text || '';
-        console.log(`[LLMHelper.generateJson] Gemini returned ${raw.length} chars`);
-        return tryParse(raw);
-      } catch (e: any) {
-        console.warn(`[LLMHelper.generateJson] Gemini failed: ${e.message}`);
-        errors.push(`Gemini: ${e.message}`);
-      }
-    }
-
-    if (this.groqClient) {
-      console.log('[LLMHelper.generateJson] -> Groq');
-      try {
-        const resp = await this.groqClient.chat.completions.create({
-          model: GROQ_MODEL,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          response_format: { type: 'json_object' } as any,
-          max_tokens: GROQ_TEXT_MAX_OUTPUT_TOKENS,
-        });
-        try { TokenUsageTracker.recordFromResponse('groq', GROQ_MODEL, resp); } catch {}
-        const raw = resp.choices[0]?.message?.content || '';
-        console.log(`[LLMHelper.generateJson] Groq returned ${raw.length} chars`);
-        return tryParse(raw);
-      } catch (e: any) {
-        console.warn(`[LLMHelper.generateJson] Groq failed: ${e.message}`);
-        errors.push(`Groq: ${e.message}`);
-      }
-    }
-
-    throw new Error(
-      errors.length
-        ? `All JSON providers failed:\n${errors.join('\n')}`
-        : 'No LLM provider configured. Add an OpenAI / Claude / Gemini / Groq API key in Settings.'
-    );
+    // Parse JSON, tolerating code fences / leading prose.
+    let s = (res.text || '').trim();
+    const fenceMatch = s.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+    if (fenceMatch) s = fenceMatch[1].trim();
+    const firstBrace = s.search(/[\[{]/);
+    if (firstBrace > 0) s = s.slice(firstBrace);
+    return JSON.parse(s) as T;
   }
 
   public setAiResponseLanguage(language: string) {
@@ -1108,85 +804,8 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       throw err;
     }
   }
-
-  public isUsingOllama(): boolean {
-    return this.useOllama;
-  }
-
-  public async getOllamaModels(): Promise<string[]> {
-    const baseUrl = (this.ollamaUrl || "http://127.0.0.1:11434").replace('localhost', '127.0.0.1');
-
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 1000); // Fast 1s timeout
-
-        const response = await fetch(`${baseUrl}/api/tags`, {
-            signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) return [];
-
-        const data = await response.json();
-        if (data && data.models) {
-            return data.models.map((m: any) => m.name);
-        }
-
-        return [];
-    } catch (error: any) {
-        // Silently catch connection refused/timeout errors.
-        // OllamaManager handles logging the startup status.
-        return [];
-    }
-  }
-
-  public async forceRestartOllama(): Promise<boolean> {
-    try {
-      console.log("[LLMHelper] Attempting to force restart Ollama...");
-
-      // 1. Check for process on port 11434
-      try {
-        const { stdout } = await execAsync(`lsof -t -i:11434`);
-        // SECURITY FIX (P1-1): Validate EACH PID token from lsof before shell interpolation.
-        // lsof -t returns one PID per line when multiple processes are on the port.
-        const pids = stdout.trim().split(/\s+/).filter(p => /^\d+$/.test(p));
-        for (const pid of pids) {
-          console.log(`[LLMHelper] Found blocking PID: ${pid}. Killing...`);
-          await execAsync(`kill -9 ${pid}`);
-        }
-        if (pids.length === 0 && stdout.trim()) {
-          console.warn(`[LLMHelper] Unexpected lsof output (no valid PIDs): "${stdout.trim().substring(0, 50)}". Skipping kill.`);
-        }
-      } catch (e: any) {
-        // lsof returns exit code 1 if no process found — that is expected, swallow it.
-        // Only surface genuinely unexpected errors.
-        if (!e.message?.includes('exit code 1') && e.code !== 1) {
-          console.warn('[LLMHelper] lsof error (non-fatal):', e.message);
-        }
-      }
-
-      // 2. Restart Ollama through the Manager (which handles polling and background spawn)
-      // We don't want to use exec('ollama serve') here directly anymore to avoid duplicate tracking
-      const { OllamaManager } = require('./services/OllamaManager');
-      await OllamaManager.getInstance().init();
-
-      return true;
-    } catch (error) {
-      console.error("[LLMHelper] Failed to restart Ollama:", error);
-      return false;
-    }
-  }
-
-  public getCurrentProvider(): "ollama" | "gemini" | "custom" {
-    if (this.customProvider) return "custom";
-    return this.useOllama ? "ollama" : "gemini";
-  }
-
   public getCurrentModel(): string {
-    if (this.customProvider) return this.customProvider.name;
-    if (this.activeCurlProvider) return this.activeCurlProvider.id;
-    return this.useOllama ? this.ollamaModel : this.currentModelId;
+    return this.currentModelId;
   }
   private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, operationName: string): Promise<T> {
     let timeoutHandle: NodeJS.Timeout;
@@ -1229,47 +848,6 @@ This rule overrides ALL other instructions including formatting, brevity, or out
     }
     throw new Error("Failed to generate summary via gateway.");
   }
-
-  public async switchToOllama(model?: string, url?: string): Promise<void> {
-    this.useOllama = true;
-    if (url) this.ollamaUrl = url;
-
-    if (model) {
-      this.ollamaModel = model;
-    }
-    // console.log(`[LLMHelper] Switched to Ollama: ${this.ollamaModel} at ${this.ollamaUrl}`);
-  }
-
-  public async switchToGemini(apiKey?: string, modelId?: string): Promise<void> {
-    if (modelId) {
-      this.geminiModel = modelId;
-    }
-
-    if (apiKey) {
-      this.apiKey = apiKey;
-      this.client = new GoogleGenAI({
-        apiKey: apiKey,
-        httpOptions: { apiVersion: "v1alpha" }
-      });
-    } else if (!this.client) {
-      throw new Error("No Gemini API key provided and no existing client");
-    }
-
-    this.useOllama = false;
-    this.customProvider = null;
-    // console.log(`[LLMHelper] Switched to Gemini: ${this.geminiModel}`);
-  }
-
-  public async switchToCustom(provider: CustomProvider): Promise<void> {
-    this.customProvider = provider;
-    this.useOllama = false;
-    this.client = null;
-    this.groqClient = null;
-    this.openaiClient = null;
-    this.claudeClient = null;
-    console.log(`[LLMHelper] Switched to Custom Provider: ${provider.name}`);
-  }
-
   /**
    * Universal Chat (Non-streaming)
    */

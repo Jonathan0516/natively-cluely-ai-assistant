@@ -437,14 +437,8 @@ export class AppState {
     // Restore toggle states that live in LLMHelper memory.
     // This MUST happen here — not inside initializeRAGManager() — so that
     // it runs unconditionally regardless of whether premium modules are available.
-    // Previously, groqFastTextMode restore was inside the KnowledgeOrchestrator
-    // block which silently skips when premium modules are absent.
     {
       const llmHelper = this.processingHelper.getLLMHelper();
-      if (settingsManager.get('groqFastTextMode')) {
-        llmHelper.setGroqFastTextMode(true);
-        console.log('[AppState] Fast mode restored from settings');
-      }
       // Restore custom notes for non-premium path (cloud — fire-and-forget)
       DatabaseManager.getInstance().getCustomNotes()
         .then(savedNotes => { if (savedNotes) llmHelper.setCustomNotes(savedNotes); })

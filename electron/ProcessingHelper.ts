@@ -22,29 +22,9 @@ export class ProcessingHelper {
 
   constructor(appState: AppState) {
     this.appState = appState
-
-    // Check if user wants to use Ollama
-    const useOllama = process.env.USE_OLLAMA === "true"
-    const ollamaModel = process.env.OLLAMA_MODEL // Don't set default here, let LLMHelper auto-detect
-    const ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434"
-
-    if (useOllama) {
-      // console.log("[ProcessingHelper] Initializing with Ollama")
-      this.llmHelper = new LLMHelper(undefined, true, ollamaModel, ollamaUrl)
-    } else {
-      // Try environment first (for development)
-      let apiKey = process.env.GEMINI_API_KEY
-      let groqApiKey = process.env.GROQ_API_KEY
-      let openaiApiKey = process.env.OPENAI_API_KEY
-      let claudeApiKey = process.env.CLAUDE_API_KEY
-
-      // Allow initializing without key (will be loaded in loadStoredCredentials or via Settings)
-      if (!apiKey) {
-        console.warn("[ProcessingHelper] GEMINI_API_KEY not found in env. Will try CredentialsManager after ready.")
-      }
-
-      this.llmHelper = new LLMHelper(apiKey, false, undefined, undefined, groqApiKey, openaiApiKey, claudeApiKey)
-    }
+    // Cloud-only: the LLM helper holds no provider credentials — all LLM calls go
+    // through the backend gateway (authenticated via CloudClient).
+    this.llmHelper = new LLMHelper()
   }
 
   /**
@@ -54,71 +34,28 @@ export class ProcessingHelper {
   public loadStoredCredentials(): void {
     const credManager = CredentialsManager.getInstance();
 
-    const geminiKey = credManager.getGeminiApiKey();
-    const groqKey = credManager.getGroqApiKey();
-    const openaiKey = credManager.getOpenaiApiKey();
-    const claudeKey = credManager.getClaudeApiKey();
-
-    if (geminiKey) {
-      console.log("[ProcessingHelper] Loading stored Gemini API Key from CredentialsManager");
-      this.llmHelper.setApiKey(geminiKey);
-    }
-
-    if (groqKey) {
-      console.log("[ProcessingHelper] Loading stored Groq API Key from CredentialsManager");
-      this.llmHelper.setGroqApiKey(groqKey);
-    }
-
-    if (openaiKey) {
-      console.log("[ProcessingHelper] Loading stored OpenAI API Key from CredentialsManager");
-      this.llmHelper.setOpenaiApiKey(openaiKey);
-    }
-
-    if (claudeKey) {
-      console.log("[ProcessingHelper] Loading stored Claude API Key from CredentialsManager");
-      this.llmHelper.setClaudeApiKey(claudeKey);
-    }
-
-    // CRITICAL: Re-initialize IntelligenceManager now that keys are loaded
-    // This fixes the issue where buttons don't work in production because of late key loading
+    // Cloud-only: no LLM provider keys to load. Re-initialize downstream managers
+    // so they pick up the authenticated gateway path.
     this.appState.getIntelligenceManager().initializeLLMs();
 
-    // CRITICAL: Initialize RAGManager (Embeddings) with loaded keys
-    // This fixes "RAG unavailable" in production where process.env is empty
+    // Initialize RAGManager embeddings. The resolver prefers the cloud gateway
+    // (platform key) and falls back to the bundled local model — no per-user keys.
     const ragManager = this.appState.getRAGManager();
     if (ragManager) {
-      console.log("[ProcessingHelper] Initializing RAGManager embeddings with available keys");
-      ragManager.initializeEmbeddings({
-          openaiKey: openaiKey || undefined,
-          geminiKey: geminiKey || undefined,
-          // ollamaUrl is not fetched in CredentialsManager yet by default, but we pass these keys
-      });
+      console.log("[ProcessingHelper] Initializing RAGManager embeddings (cloud gateway preferred)");
+      ragManager.initializeEmbeddings({});
 
-      // CRITICAL: Retry pending embeddings now that we have a key
-      // This ensures any meetings that failed or were queued during startup get processed
-      console.log("[ProcessingHelper] Retrying pending embeddings...");
+      // Retry pending embeddings + housekeeping now that the pipeline is ready.
       ragManager.retryPendingEmbeddings().catch(console.error);
-
-      // CRITICAL: Ensure demo meeting has chunks
       ragManager.ensureDemoMeetingProcessed().catch(console.error);
-
-      // CRITICAL: Cleanup stale queue items to prevent "Chunk not found" errors
       ragManager.cleanupStaleQueueItems();
     }
 
-    // Initialize self-improving model version manager (background, non-blocking)
-    this.llmHelper.initModelVersionManager().catch(err => {
-      console.warn('[ProcessingHelper] ModelVersionManager initialization failed (non-critical):', err.message);
-    });
-
-    // NEW: Load Default Model Config
+    // Load Default Model Config (logical model id; no local providers)
     const defaultModel = credManager.getDefaultModel();
     if (defaultModel) {
       console.log(`[ProcessingHelper] Loading stored Default Model: ${defaultModel}`);
-      const customProviders = credManager.getCustomProviders();
-      const curlProviders = credManager.getCurlProviders();
-      const allProviders = [...(customProviders || []), ...(curlProviders || [])];
-      this.llmHelper.setModel(defaultModel, allProviders);
+      this.llmHelper.setModel(defaultModel);
     }
 
     // Load Languages
