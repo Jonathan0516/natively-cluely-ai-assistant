@@ -766,28 +766,17 @@ ANSWER DIRECTLY:`;
     // Apply language instruction so this path honours the user's language setting
     const systemPrompt = this.injectLanguageInstruction(basePrompt);
 
-    try {
-      if (this.useOllama) {
-        return await this.callOllama(systemPrompt);
-      } else if (this.customProvider || this.activeCurlProvider) {
-        // Pass basePrompt (pre-language-injection) as systemPromptOverride so streamChat
-        // calls injectLanguageInstruction exactly once. lastQuestion is the clean user message.
-        // enrichedContext carries the mode reference files + custom context.
-        // ignoreKnowledgeMode=true: this is a live suggestion, not a knowledge/profile query.
-        let fullResponse = '';
-        for await (const chunk of this.streamChat(lastQuestion, undefined, enrichedContext, basePrompt, true)) {
-          fullResponse += chunk;
-        }
-        return this.processResponse(fullResponse);
-      } else if (this.client) {
-        const text = await this.generateWithFlash([{ text: systemPrompt }]);
-        return this.processResponse(text);
-      } else {
-        throw new Error("No LLM provider configured");
-      }
-    } catch (error) {
-      throw error;
+    // Cloud-only: route through the gateway via streamChat. Pass basePrompt
+    // (pre-language-injection) as systemPromptOverride so injectLanguageInstruction
+    // runs exactly once; lastQuestion is the clean user message and enrichedContext
+    // carries mode reference files + custom context. ignoreKnowledgeMode=true: this
+    // is a live suggestion, not a knowledge/profile query.
+    void systemPrompt; // retained above for prompt construction; gateway path uses basePrompt
+    let fullResponse = '';
+    for await (const chunk of this.streamChat(lastQuestion, undefined, enrichedContext, basePrompt, true)) {
+      fullResponse += chunk;
     }
+    return this.processResponse(fullResponse);
   }
 
   public setKnowledgeOrchestrator(orchestrator: any): void {
@@ -1293,149 +1282,21 @@ This rule overrides ALL other instructions including formatting, brevity, or out
    * NOTE: Does NOT mutate this.geminiModel — calls Gemini Pro directly to avoid race conditions.
    */
   public async generateContentStructured(message: string): Promise<string> {
-    // BACKEND GATEWAY (metered, platform key) — structured JSON via /llm/json, default path.
-    // Falls back to local providers if the gateway call fails.
-    if (this.gatewayChatEnabled()) {
-      try {
-        const { CloudClient } = require('./services/CloudClient');
-        const res = await CloudClient.getInstance().llmJson({
-          model: this.toLogicalModel(this.currentModelId),
-          messages: [{ role: 'user', content: message }],
-        });
-        return res.text;
-      } catch (err) {
-        if (isQuotaExhaustedError(err)) {
-          // Cloud-only: quota exhaustion force-ends the meeting (handled in main.ts).
-          // Never fall back to local providers here.
-          appEvents.emit('quota-exhausted', { source: 'json', message: (err as Error)?.message });
-          throw err;
-        }
-        console.warn('[LLMHelper] gateway json unavailable, falling back to local providers:', err);
+    // Cloud-only: structured JSON via the metered backend gateway (/llm/json).
+    // Quota (402) emits 'quota-exhausted'; any other failure surfaces as an error.
+    try {
+      const { CloudClient } = require('./services/CloudClient');
+      const res = await CloudClient.getInstance().llmJson({
+        model: this.toLogicalModel(this.currentModelId),
+        messages: [{ role: 'user', content: message }],
+      });
+      return res.text;
+    } catch (err) {
+      if (isQuotaExhaustedError(err)) {
+        appEvents.emit('quota-exhausted', { source: 'json', message: (err as Error)?.message });
       }
+      throw err;
     }
-
-    type ProviderAttempt = { name: string; execute: () => Promise<string> };
-    const providers: ProviderAttempt[] = [];
-
-    // Priority 1: OpenAI
-    if (this.openaiClient) {
-      providers.push({ name: `OpenAI (${OPENAI_MODEL})`, execute: () => this.generateWithOpenai(message) });
-    }
-
-    // Priority 2: Gemini Pro (don't mutate this.geminiModel to avoid race conditions)
-    // NOTE: Claude is intentionally de-prioritised here — messages.create (non-streaming) is
-    // rejected by Anthropic for large payloads ("Streaming is required for operations that may
-    // take longer than 10 minutes"), causing a wasted round-trip before the Gemini fallback.
-    // Claude remains available as a last resort after Gemini Flash.
-    if (this.client) {
-      providers.push({
-        name: `Gemini Pro (${GEMINI_PRO_MODEL})`,
-        execute: async () => {
-          // Call the API directly with the Pro model instead of touching shared state
-          const response = await this.withRetry(async () => {
-            // @ts-ignore
-            const res = await this.client!.models.generateContent({
-              model: GEMINI_PRO_MODEL,
-              contents: [{ role: 'user', parts: [{ text: message }] }],
-              config: { maxOutputTokens: MAX_OUTPUT_TOKENS, temperature: 0.4 }
-            });
-            const candidate = res.candidates?.[0];
-            if (!candidate) return '';
-            if (res.text) return res.text;
-            const parts = candidate.content?.parts ?? [];
-            return (Array.isArray(parts) ? parts : [parts]).map((p: any) => p?.text ?? '').join('');
-          });
-          return response;
-        }
-      });
-
-      // Priority 3b: Gemini Flash fallback (if Pro model is unavailable or fails)
-      providers.push({
-        name: `Gemini Flash (${GEMINI_FLASH_MODEL})`,
-        execute: async () => {
-          const response = await this.withRetry(async () => {
-            // @ts-ignore
-            const res = await this.client!.models.generateContent({
-              model: GEMINI_FLASH_MODEL,
-              contents: [{ role: 'user', parts: [{ text: message }] }],
-              config: { maxOutputTokens: MAX_OUTPUT_TOKENS, temperature: 0.4 }
-            });
-            const candidate = res.candidates?.[0];
-            if (!candidate) return '';
-            if (res.text) return res.text;
-            const parts = candidate.content?.parts ?? [];
-            return (Array.isArray(parts) ? parts : [parts]).map((p: any) => p?.text ?? '').join('');
-          });
-          return response;
-        }
-      });
-    }
-
-    // Priority 4: Claude (last resort before Groq — non-streaming, fails on large payloads)
-    if (this.claudeClient) {
-      providers.push({ name: `Claude (${CLAUDE_MODEL})`, execute: () => this.generateWithClaude(message) });
-    }
-
-    // Priority 5: Groq (Fallback despite JSON hallucination risks)
-    if (this.groqClient) {
-      providers.push({ name: `Groq (${GROQ_MODEL}) fallback`, execute: () => this.generateWithGroq(message) }); // intentional: structured-gen last-resort uses stable baseline model, not user selection
-    }
-
-    // Priority 6: Ollama (on-device fallback — last resort, no cloud dependency)
-    if (this.useOllama && await this.checkOllamaAvailable()) {
-      providers.push({
-        name: `Ollama (${this.ollamaModel})`,
-        execute: () => this.callOllama(message)
-      });
-    }
-
-    // Priority 7: Custom / cURL providers (OpenRouter etc.)
-    if (this.customProvider) {
-      providers.push({
-        name: `Custom Provider (${this.customProvider.name})`,
-        execute: () => this.executeCustomProvider(
-          this.customProvider!.curlCommand,
-          message,
-          '',
-          message,
-          ''
-        )
-      });
-    } else if (this.activeCurlProvider) {
-      providers.push({
-        name: `cURL Provider (${this.activeCurlProvider.name})`,
-        execute: () => this.chatWithCurl(message)
-      });
-    }
-
-    if (providers.length === 0) {
-      throw new Error('No reasoning model available. Please configure an API key (OpenAI, Claude, Gemini, Groq) or a custom provider.');
-    }
-
-    const MAX_ROTATIONS = 3;
-    for (let rotation = 0; rotation < MAX_ROTATIONS; rotation++) {
-      if (rotation > 0) {
-        const backoffMs = 1000 * rotation;
-        console.log(`[LLMHelper] 🔄 Structured generation rotation ${rotation + 1}/${MAX_ROTATIONS} after ${backoffMs}ms backoff...`);
-        await this.delay(backoffMs);
-      }
-
-      for (const provider of providers) {
-        try {
-          console.log(`[LLMHelper] 🧠 Structured generation: trying ${provider.name}...`);
-          const result = await provider.execute();
-          if (result && result.trim().length > 0) {
-            console.log(`[LLMHelper] ✅ Structured generation succeeded with ${provider.name}`);
-            return result;
-          }
-          console.warn(`[LLMHelper] ⚠️ ${provider.name} returned empty response`);
-        } catch (error: any) {
-          console.warn(`[LLMHelper] ⚠️ Structured generation: ${provider.name} failed: ${error.message}`);
-        }
-      }
-    }
-
-    throw new Error('All reasoning models failed for structured generation after 3 attempts');
   }
 
   private estimateGroqTokens(text: string): number {
@@ -1906,227 +1767,14 @@ This rule overrides ALL other instructions including formatting, brevity, or out
    * After all cloud tiers: Custom Provider -> cURL Provider -> Ollama
    */
   private async generateWithVisionFallback(systemPrompt: string, userPrompt: string, imagePaths: string[] = []): Promise<string> {
-    type ProviderAttempt = { name: string; execute: () => Promise<string> };
+    // Cloud-only: internal vision/text ops route through the metered backend gateway.
+    // Quota (402) emits 'quota-exhausted' (inside generateViaGateway) and rethrows.
     const isMultimodal = imagePaths.length > 0;
-
-    // BACKEND GATEWAY (metered, platform key) — default path for internal vision/text ops.
-    // Falls back to the local tier rotation below only if the gateway produces nothing.
-    if (this.gatewayChatEnabled()) {
-      try {
-        const out = await this.generateViaGateway(systemPrompt, userPrompt, isMultimodal ? imagePaths : undefined);
-        if (out.trim().length > 0) return out;
-        console.warn('[LLMHelper] gateway vision returned empty, falling back to local providers');
-      } catch (err) {
-        if (isQuotaExhaustedError(err)) throw err; // quota: no local fallback (event already emitted)
-        console.warn('[LLMHelper] gateway vision unavailable, falling back to local providers:', err);
-      }
+    const out = await this.generateViaGateway(systemPrompt, userPrompt, isMultimodal ? imagePaths : undefined);
+    if (out.trim().length === 0) {
+      throw new Error('Gateway returned empty response for vision/text op.');
     }
-
-    // Helper: build a provider attempt for a given family + model ID
-    const buildProviderForFamily = (family: ModelFamily, modelId: string): ProviderAttempt | null => {
-      switch (family) {
-        case ModelFamily.OPENAI:
-          if (!this.openaiClient) return null;
-          return {
-            name: `OpenAI (${modelId})`,
-            execute: () => this.generateWithOpenai(userPrompt, systemPrompt, isMultimodal ? imagePaths : undefined, modelId)
-          };
-
-        case ModelFamily.GEMINI_FLASH:
-          if (!this.client) return null;
-          if (isMultimodal) {
-            return {
-              name: `Gemini Flash (${modelId})`,
-              execute: async () => {
-                const contents: any[] = [{ text: `${systemPrompt}\n\n${userPrompt}` }];
-                for (const p of imagePaths) {
-                  if (fs.existsSync(p)) {
-                    const { mimeType, data } = await this.processImage(p);
-                    contents.push({ inlineData: { mimeType, data } });
-                  }
-                }
-                return await this.generateContent(contents, modelId);
-              }
-            };
-          }
-          return {
-            name: `Gemini Flash (${modelId})`,
-            execute: () => this.generateContent([{ text: `${systemPrompt}\n\n${userPrompt}` }], modelId)
-          };
-
-        case ModelFamily.CLAUDE:
-          if (!this.claudeClient) return null;
-          return {
-            name: `Claude (${modelId})`,
-            execute: () => this.generateWithClaude(userPrompt, systemPrompt, isMultimodal ? imagePaths : undefined, modelId)
-          };
-
-        case ModelFamily.GEMINI_PRO:
-          if (!this.client) return null;
-          if (isMultimodal) {
-            return {
-              name: `Gemini Pro (${modelId})`,
-              execute: async () => {
-                const contents: any[] = [{ text: `${systemPrompt}\n\n${userPrompt}` }];
-                for (const p of imagePaths) {
-                  if (fs.existsSync(p)) {
-                    const { mimeType, data } = await this.processImage(p);
-                    contents.push({ inlineData: { mimeType, data } });
-                  }
-                }
-                return await this.generateContent(contents, modelId);
-              }
-            };
-          }
-          return {
-            name: `Gemini Pro (${modelId})`,
-            execute: () => this.generateContent([{ text: `${systemPrompt}\n\n${userPrompt}` }], modelId)
-          };
-
-        case ModelFamily.GROQ_LLAMA:
-          if (!this.groqClient) return null;
-          if (isMultimodal) {
-            return {
-              name: `Groq (${modelId})`,
-              execute: () => this.generateWithGroqMultimodal(userPrompt, imagePaths, systemPrompt)
-            };
-          }
-          return {
-            name: `Groq (${modelId})`,
-            execute: () => this.generateWithGroq(`${systemPrompt}\n\n${userPrompt}`, modelId)
-          };
-
-        default:
-          return null;
-      }
-    };
-
-    // ──────────────────────────────────────────────────────────────────
-    // Build 3-tier retry rotation from ModelVersionManager
-    // ──────────────────────────────────────────────────────────────────
-    const allTiers = this.modelVersionManager.getAllVisionTiers();
-
-    const buildTierProviders = (tierKey: 'tier1' | 'tier2' | 'tier3'): ProviderAttempt[] => {
-      const result: ProviderAttempt[] = [];
-      for (const entry of allTiers) {
-        const modelId = entry[tierKey];
-        const attempt = buildProviderForFamily(entry.family, modelId);
-        if (attempt) result.push(attempt);
-      }
-      return result;
-    };
-
-    const tier1Providers = buildTierProviders('tier1');
-    const tier2Providers = buildTierProviders('tier2');
-    const tier3Providers = buildTierProviders('tier3'); // Same as tier2 — pure retry
-
-
-    // ──────────────────────────────────────────────────────────────────
-    // Local fallback providers (appended after all cloud tiers)
-    // ──────────────────────────────────────────────────────────────────
-    const localProviders: ProviderAttempt[] = [];
-
-    if (this.customProvider) {
-      if (isMultimodal) {
-        localProviders.push({
-          name: `Custom Provider (${this.customProvider.name})`,
-          execute: () => this.executeCustomProvider(
-            this.customProvider!.curlCommand,
-            `${systemPrompt}\n\n${userPrompt}`,
-            systemPrompt,
-            userPrompt,
-            "",
-            imagePaths[0]
-          )
-        });
-      } else {
-        localProviders.push({
-          name: `Custom Provider (${this.customProvider.name})`,
-          execute: () => this.executeCustomProvider(
-            this.customProvider!.curlCommand,
-            `${systemPrompt}\n\n${userPrompt}`,
-            systemPrompt,
-            userPrompt,
-            ""
-          )
-        });
-      }
-    }
-
-    if (this.activeCurlProvider && !this.customProvider) {
-      localProviders.push({
-        name: `cURL Provider (${this.activeCurlProvider.name})`,
-        execute: () => this.chatWithCurl(userPrompt, systemPrompt, isMultimodal ? imagePaths[0] : undefined)
-      });
-    }
-
-    if (this.useOllama) {
-      localProviders.push({
-        name: `Ollama (${this.ollamaModel})`,
-        execute: () => this.callOllama(`${systemPrompt}\n\n${userPrompt}`, isMultimodal ? imagePaths[0] : undefined)
-      });
-    }
-
-    // ──────────────────────────────────────────────────────────────────
-    // Execute 3-tier rotation with exponential backoff between tiers
-    // ──────────────────────────────────────────────────────────────────
-    const tiers = [
-      { label: 'Tier 1 (Stable)', providers: tier1Providers },
-      { label: 'Tier 2 (Latest)', providers: tier2Providers },
-      { label: 'Tier 3 (Retry)', providers: tier3Providers },
-    ];
-
-    for (let tierIndex = 0; tierIndex < tiers.length; tierIndex++) {
-      const tier = tiers[tierIndex];
-
-      if (tier.providers.length === 0) continue;
-
-      // Exponential backoff between tiers (skip for first tier)
-      if (tierIndex > 0) {
-        const backoffMs = 1000 * Math.pow(2, tierIndex - 1);
-        console.log(`[LLMHelper] 🔄 Escalating to ${tier.label} after ${backoffMs}ms backoff...`);
-        await new Promise(resolve => setTimeout(resolve, backoffMs));
-      }
-
-      for (const provider of tier.providers) {
-        try {
-          const emoji = tierIndex === 0 ? '🚀' : tierIndex === 1 ? '🔁' : '🆘';
-          console.log(`[LLMHelper] ${emoji} [${tier.label}] Attempting ${provider.name}...`);
-          const result = await provider.execute();
-          if (result && result.trim().length > 0) {
-            console.log(`[LLMHelper] ✅ [${tier.label}] ${provider.name} succeeded.`);
-            return result;
-          }
-          console.warn(`[LLMHelper] ⚠️ [${tier.label}] ${provider.name} returned empty response`);
-        } catch (err: any) {
-          console.warn(`[LLMHelper] ⚠️ [${tier.label}] ${provider.name} failed: ${err.message}`);
-
-          // Event-driven discovery: trigger on 404 / model-not-found errors
-          const errMsg = (err.message || '').toLowerCase();
-          if (errMsg.includes('404') || errMsg.includes('not found') || errMsg.includes('deprecated')) {
-            this.modelVersionManager.onModelError(provider.name).catch(() => {});
-          }
-        }
-      }
-    }
-
-    // ──────────────────────────────────────────────────────────────────
-    // Local fallback — absolute last resort after all cloud tiers exhausted
-    // ──────────────────────────────────────────────────────────────────
-    for (const provider of localProviders) {
-      try {
-        console.log(`[LLMHelper] 🏠 [Local Fallback] Attempting ${provider.name}...`);
-        const result = await provider.execute();
-        if (result && result.trim().length > 0) {
-          console.log(`[LLMHelper] ✅ [Local Fallback] ${provider.name} succeeded.`);
-          return result;
-        }
-      } catch (err: any) {
-        console.warn(`[LLMHelper] ⚠️ [Local Fallback] ${provider.name} failed: ${err.message}`);
-      }
-    }
-
-    throw new Error("All AI providers failed across all 3 tiers and local fallbacks.");
+    return out;
   }
 
 
@@ -2173,145 +1821,23 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       groq: buildCombinedMessage(GROQ_SYSTEM_PROMPT + profileBlock),
     };
 
-    // BACKEND GATEWAY (metered, platform key) — default path, with fall-back-before-first-token.
-    if (this.gatewayChatEnabled()) {
-      const gwSystem = skipSystemPrompt
-        ? ''
-        : this.injectLanguageInstruction(HARD_SYSTEM_PROMPT + profileBlock);
-      let started = false;
-      try {
-        for await (const tok of this.streamWithGateway(userContent, gwSystem, imagePaths)) {
-          started = true;
-          yield tok;
-        }
-        return;
-      } catch (err) {
-        if (isQuotaExhaustedError(err)) {
-          // Cloud-only: quota exhaustion force-ends the meeting (handled in main.ts).
-          // Never fall back to local providers here.
-          appEvents.emit('quota-exhausted', { source: 'chat', message: (err as Error)?.message });
-          throw err;
-        }
-        if (started) throw err;
-        console.warn('[LLMHelper] gateway chat unavailable, falling back to local providers:', err);
+    // BACKEND GATEWAY (metered, platform key) — the only path (cloud-only).
+    // Quota (402) emits 'quota-exhausted' (force-ends the meeting); any other
+    // failure surfaces as an error. No local fallback.
+    void combinedMessages; // legacy combined-prompt builder retained for prompt shape; gateway uses system+user
+    const gwSystem = skipSystemPrompt
+      ? ''
+      : this.injectLanguageInstruction(HARD_SYSTEM_PROMPT + profileBlock);
+    try {
+      for await (const tok of this.streamWithGateway(userContent, gwSystem, imagePaths)) {
+        yield tok;
       }
+    } catch (err) {
+      if (isQuotaExhaustedError(err)) {
+        appEvents.emit('quota-exhausted', { source: 'chat', message: (err as Error)?.message });
+      }
+      throw err;
     }
-
-    if (this.useOllama) {
-      const response = await this.callOllama(combinedMessages.gemini, imagePaths?.[0]);
-      yield response;
-      return;
-    }
-
-    // ============================================================
-    // SMART DYNAMIC FALLBACK: Build provider list using auto-discovered
-    // text models from ModelVersionManager.
-    // Multimodal requests EXCLUDE Groq (no vision support)
-    // Text-only requests can use ALL providers
-    // OpenAI/Claude use proper system+user message separation for quality
-    // ============================================================
-    type ProviderAttempt = { name: string; execute: () => AsyncGenerator<string, void, unknown> };
-    const providers: ProviderAttempt[] = [];
-
-    // System prompts for OpenAI/Claude (skipped if skipSystemPrompt)
-    const openaiSystemPrompt = skipSystemPrompt ? undefined : this.injectLanguageInstruction(OPENAI_SYSTEM_PROMPT + profileBlock);
-    const claudeSystemPrompt = skipSystemPrompt ? undefined : this.injectLanguageInstruction(CLAUDE_SYSTEM_PROMPT + profileBlock);
-
-    // Get auto-discovered text model IDs from ModelVersionManager
-    const textOpenAI = this.modelVersionManager.getTextTieredModels(TextModelFamily.OPENAI).tier1;
-    const textGeminiFlash = this.modelVersionManager.getTextTieredModels(TextModelFamily.GEMINI_FLASH).tier1;
-    const textGeminiPro = this.modelVersionManager.getTextTieredModels(TextModelFamily.GEMINI_PRO).tier1;
-    const textClaude = this.modelVersionManager.getTextTieredModels(TextModelFamily.CLAUDE).tier1;
-    const textGroq = this.modelVersionManager.getTextTieredModels(TextModelFamily.GROQ).tier1;
-
-    if (isMultimodal) {
-      // MULTIMODAL PROVIDER ORDER: OpenAI -> Gemini Flash -> Claude -> Gemini Pro -> Groq Scout 4
-      if (this.openaiClient) {
-        providers.push({ name: `OpenAI (${textOpenAI})`, execute: () => this.streamWithOpenaiMultimodal(userContent, imagePaths!, openaiSystemPrompt, textOpenAI) });
-      }
-      if (this.client) {
-        providers.push({ name: `Gemini Flash (${textGeminiFlash})`, execute: () => this.streamWithGeminiModel(combinedMessages.gemini, textGeminiFlash, imagePaths) });
-      }
-      if (this.claudeClient) {
-        providers.push({ name: `Claude (${textClaude})`, execute: () => this.streamWithClaudeMultimodal(userContent, imagePaths!, claudeSystemPrompt, textClaude) });
-      }
-      if (this.client) {
-        providers.push({ name: `Gemini Pro (${textGeminiPro})`, execute: () => this.streamWithGeminiModel(combinedMessages.gemini, textGeminiPro, imagePaths) });
-      }
-      if (this.groqClient) {
-        providers.push({ name: `Groq (meta-llama/llama-4-scout-17b-16e-instruct)`, execute: () => this.streamWithGroqMultimodal(userContent, imagePaths!, openaiSystemPrompt) });
-      }
-    } else {
-      // TEXT-ONLY PROVIDER ORDER: Groq → OpenAI → Claude → Gemini Flash → Gemini Pro
-      if (this.groqClient) {
-        providers.push({ name: `Groq (${textGroq})`, execute: () => this.streamWithGroq(combinedMessages.groq, textGroq) });
-      }
-      if (this.openaiClient) {
-        providers.push({ name: `OpenAI (${textOpenAI})`, execute: () => this.streamWithOpenai(userContent, openaiSystemPrompt, textOpenAI) });
-      }
-      if (this.claudeClient) {
-        providers.push({ name: `Claude (${textClaude})`, execute: () => this.streamWithClaude(userContent, claudeSystemPrompt, textClaude) });
-      }
-      if (this.client) {
-        providers.push({ name: `Gemini Flash (${textGeminiFlash})`, execute: () => this.streamWithGeminiModel(combinedMessages.gemini, textGeminiFlash) });
-        providers.push({ name: `Gemini Pro (${textGeminiPro})`, execute: () => this.streamWithGeminiModel(combinedMessages.gemini, textGeminiPro) });
-      }
-    }
-
-    if (providers.length === 0) {
-      yield "No AI providers configured. Please add at least one API key in Settings.";
-      return;
-    }
-
-    // ============================================================
-    // PRIORITIZE USER'S SELECTED PROVIDER
-    // Ensure the model the user selected handles the request first
-    // before falling back to others.
-    // ============================================================
-    const currentFamilyLabel = this.isClaudeModel(this.currentModelId) ? 'Claude'
-      : this.isOpenAiModel(this.currentModelId) ? 'OpenAI'
-      : this.isGroqModel(this.currentModelId) ? 'Groq'
-      : this.isGeminiModel(this.currentModelId) ? 'Gemini'
-      : '';
-
-    if (currentFamilyLabel) {
-      providers.sort((a, b) => {
-        if (a.name.startsWith(currentFamilyLabel) && !b.name.startsWith(currentFamilyLabel)) return -1;
-        if (!a.name.startsWith(currentFamilyLabel) && b.name.startsWith(currentFamilyLabel)) return 1;
-        return 0;
-      });
-    }
-
-    // ============================================================
-    // RELENTLESS RETRY: Try all providers, then retry entire chain
-    // with exponential backoff. Max 2 full rotations.
-    // ============================================================
-    const MAX_FULL_ROTATIONS = 3;
-
-    for (let rotation = 0; rotation < MAX_FULL_ROTATIONS; rotation++) {
-      if (rotation > 0) {
-        const backoffMs = 1000 * rotation;
-        console.log(`[LLMHelper] 🔄 Starting rotation ${rotation + 1}/${MAX_FULL_ROTATIONS} after ${backoffMs}ms backoff...`);
-        await this.delay(backoffMs);
-      }
-
-      for (let i = 0; i < providers.length; i++) {
-        const provider = providers[i];
-        try {
-          console.log(`[LLMHelper] ${rotation === 0 ? '🚀' : '🔁'} Attempting ${provider.name}...`);
-          yield* provider.execute();
-          console.log(`[LLMHelper] ✅ ${provider.name} stream completed successfully`);
-          return; // SUCCESS — exit immediately
-        } catch (err: any) {
-          console.warn(`[LLMHelper] ⚠️ ${provider.name} failed: ${err.message}`);
-          // Continue to next provider
-        }
-      }
-    }
-
-    // Truly exhausted after all rotations
-    console.error(`[LLMHelper] ❌ All providers exhausted after ${MAX_FULL_ROTATIONS} rotations`);
-    yield "All AI services are currently unavailable. Please check your API keys and try again.";
   }
 
   /** Backend chat gateway is the default path; set NATIVELY_GATEWAY_CHAT=0 to force local providers. */
@@ -2444,128 +1970,19 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       ? `CONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`
       : message;
 
-    // BACKEND GATEWAY (metered, platform key) — default path. Falls back to local providers
-    // only if the gateway fails BEFORE the first token (after that we cannot safely retry).
-    if (this.gatewayChatEnabled()) {
-      let started = false;
-      try {
-        for await (const tok of this.streamWithGateway(userContent, finalSystemPrompt, imagePaths)) {
-          started = true;
-          yield tok;
-        }
-        return;
-      } catch (err) {
-        if (isQuotaExhaustedError(err)) {
-          // Cloud-only: quota exhaustion force-ends the meeting (handled in main.ts).
-          // Never fall back to local providers here.
-          appEvents.emit('quota-exhausted', { source: 'chat', message: (err as Error)?.message });
-          throw err;
-        }
-        if (started) throw err;
-        console.warn('[LLMHelper] gateway chat unavailable, falling back to local providers:', err);
+    // BACKEND GATEWAY (metered, platform key) — the only path (cloud-only).
+    // Quota (402) emits 'quota-exhausted' (force-ends the meeting); any other
+    // failure surfaces as an error. No local fallback.
+    try {
+      for await (const tok of this.streamWithGateway(userContent, finalSystemPrompt, imagePaths)) {
+        yield tok;
       }
-    }
-
-    // GROQ FAST TEXT OVERRIDE (Text-Only) — requires local Groq key.
-    if (this.groqFastTextMode && !isMultimodal && this.groqClient) {
-      console.log(`[LLMHelper] ⚡️ Groq Fast Text Mode Active (Streaming). Routing to local Groq...`);
-      try {
-        const groqSystem = systemPromptOverride ? baseSystemPrompt : `${GROQ_SYSTEM_PROMPT}${profileBlock}`;
-        const finalGroqSystem = this.injectLanguageInstruction(groqSystem);
-        const groqFullMessage = `${finalGroqSystem}\n\n${userContent}`;
-        yield* this.streamWithGroq(groqFullMessage, this.currentModelId, GROQ_FAST_TEXT_MAX_OUTPUT_TOKENS);
-        return;
-      } catch (e: any) {
-        console.warn("[LLMHelper] Groq Fast Text streaming failed, falling back:", e.message);
+    } catch (err) {
+      if (isQuotaExhaustedError(err)) {
+        appEvents.emit('quota-exhausted', { source: 'chat', message: (err as Error)?.message });
       }
+      throw err;
     }
-
-    // 1. Ollama Streaming
-    if (this.useOllama) {
-      yield* this.streamWithOllama(message, context, finalSystemPrompt, imagePaths);
-      return;
-    }
-
-    // 2a. CustomProvider (switchToCustom path) — full SSE-capable streaming
-    if (this.customProvider) {
-      yield* this.streamWithCustom(message, context, imagePaths, finalSystemPrompt);
-      return;
-    }
-
-    // 2b. Custom Provider Streaming (via cURL - Non-streaming fallback for now)
-    if (this.activeCurlProvider) {
-      const response = await this.executeCustomProvider(
-        this.activeCurlProvider.curlCommand,
-        userContent,
-        finalSystemPrompt,
-        message,
-        context || "",
-        imagePaths?.[0]
-      );
-      yield response;
-      return;
-    }
-
-    // 3. Cloud Provider Routing
-
-    // OpenAI
-    if (this.isOpenAiModel(this.currentModelId) && this.openaiClient) {
-      const openAiSystem = systemPromptOverride ? baseSystemPrompt : `${OPENAI_SYSTEM_PROMPT}${profileBlock}`;
-      const finalOpenAiSystem = this.injectLanguageInstruction(openAiSystem);
-      if (isMultimodal && imagePaths) {
-        yield* this.streamWithOpenaiMultimodal(userContent, imagePaths, finalOpenAiSystem);
-      } else {
-        yield* this.streamWithOpenai(userContent, finalOpenAiSystem);
-      }
-      return;
-    }
-
-    // Claude
-    if (this.isClaudeModel(this.currentModelId) && this.claudeClient) {
-      const claudeSystem = systemPromptOverride ? baseSystemPrompt : `${CLAUDE_SYSTEM_PROMPT}${profileBlock}`;
-      const finalClaudeSystem = this.injectLanguageInstruction(claudeSystem);
-      if (isMultimodal && imagePaths) {
-        yield* this.streamWithClaudeMultimodal(userContent, imagePaths, finalClaudeSystem);
-      } else {
-        yield* this.streamWithClaude(userContent, finalClaudeSystem);
-      }
-      return;
-    }
-
-    // Groq (Text + Multimodal)
-    if (this.isGroqModel(this.currentModelId) && this.groqClient) {
-      if (isMultimodal && imagePaths) {
-        // Route multimodal to Groq Llama 4 Scout (vision-capable)
-        const groqSystem = systemPromptOverride ? baseSystemPrompt : `${OPENAI_SYSTEM_PROMPT}${profileBlock}`;
-        const finalGroqSystem = this.injectLanguageInstruction(groqSystem);
-        yield* this.streamWithGroqMultimodal(userContent, imagePaths, finalGroqSystem);
-        return;
-      }
-      // Text-only Groq
-      const groqSystem = systemPromptOverride ? baseSystemPrompt : `${GROQ_SYSTEM_PROMPT}${profileBlock}`;
-      const finalGroqSystem = this.injectLanguageInstruction(groqSystem);
-      const groqFullMessage = `${finalGroqSystem}\n\n${userContent}`;
-      yield* this.streamWithGroq(groqFullMessage, this.currentModelId);
-      return;
-    }
-
-
-    // 4. Gemini Routing & Fallback
-    if (this.client) {
-      // Direct model use if specified
-      if (this.isGeminiModel(this.currentModelId)) {
-        const fullMsg = `${finalSystemPrompt}\n\n${userContent}`;
-        yield* this.streamWithGeminiModel(fullMsg, this.currentModelId, imagePaths);
-        return;
-      }
-
-      // Race strategy (default)
-      const raceMsg = `${finalSystemPrompt}\n\n${userContent}`;
-      yield* this.streamWithGeminiParallelRace(raceMsg, imagePaths);
-      return;
-    }
-
-    throw new Error("No AI provider configured. Please add at least one API key in Settings.");
   }
 
   /**
@@ -3447,154 +2864,18 @@ This rule overrides ALL other instructions including formatting, brevity, or out
    */
   public async generateMeetingSummary(systemPrompt: string, context: string, groqSystemPrompt?: string): Promise<string> {
     console.log(`[LLMHelper] generateMeetingSummary called. Context length: ${context.length}`);
+    void groqSystemPrompt; // legacy local-Groq prompt; unused on the cloud-only path
 
-    // Helper: Estimate tokens (crude approximation: 4 chars = 1 token)
-    const estimateTokens = (text: string) => Math.ceil(text.length / 4);
-    const tokenCount = estimateTokens(context);
-    console.log(`[LLMHelper] Estimated tokens: ${tokenCount}`);
-
-    // ATTEMPT 0: Custom Provider (highest priority — user explicitly chose this)
-    if (this.customProvider || this.activeCurlProvider) {
-      try {
-        console.log(`[LLMHelper] Attempting custom provider for summary...`);
-        // Collect the async generator into a Promise so withTimeout works.
-        // ignoreKnowledgeMode=true: meeting summaries must never go through the
-        // profile/knowledge intercept — it would corrupt the output.
-        const collectChunks = async (): Promise<string> => {
-          let result = '';
-          for await (const chunk of this.streamChat(`Context:\n${context}`, undefined, undefined, systemPrompt, true)) {
-            result += chunk;
-          }
-          return result;
-        };
-        const text = await this.withTimeout(collectChunks(), 60000, 'Custom Provider Summary');
-        if (text.trim().length > 0) {
-          console.log(`[LLMHelper] ✅ Custom provider summary generated successfully.`);
-          return this.processResponse(text);
-        }
-      } catch (e: any) {
-        console.warn(`[LLMHelper] ⚠️ Custom provider summary failed: ${e.message}. Falling back...`);
-      }
+    // Cloud-only: route summaries through the metered backend gateway.
+    const text = await this.withTimeout(
+      this.generateViaGateway(systemPrompt, `Context:\n${context}`),
+      90000,
+      'Gateway Summary'
+    );
+    if (text.trim().length > 0) {
+      return this.processResponse(text);
     }
-
-    if (this.groqClient && tokenCount < 100000) {
-      console.log(`[LLMHelper] Attempting Groq for summary...`);
-      try {
-        const groqPrompt = groqSystemPrompt || systemPrompt;
-        const response = await this.withTimeout(
-          this.groqClient.chat.completions.create({
-            model: GROQ_MODEL,
-            messages: [
-              { role: "system", content: groqPrompt },
-              { role: "user", content: `Context:\n${context}` }
-            ],
-            temperature: 0.3,
-            max_tokens: GROQ_TEXT_MAX_OUTPUT_TOKENS,
-            stream: false
-          }),
-          45000,
-          "Groq Summary"
-        );
-
-        try { TokenUsageTracker.recordFromResponse('groq', GROQ_MODEL, response); } catch {}
-        const text = response.choices[0]?.message?.content || "";
-        if (text.trim().length > 0) {
-          console.log(`[LLMHelper] ✅ Groq summary generated successfully.`);
-          return this.processResponse(text);
-        }
-      } catch (e: any) {
-        console.warn(`[LLMHelper] ⚠️ Groq summary failed: ${e.message}. Falling back to Gemini...`);
-      }
-    } else {
-      if (tokenCount >= 100000) {
-        console.log(`[LLMHelper] Context too large for Groq (${tokenCount} tokens). Skipping straight to Gemini.`);
-      }
-    }
-
-    // ATTEMPT 2: OpenAI-compatible client (covers DeepSeek / Netmind-hosted and GPT models).
-    // Without this, users who only configured an OpenAI/DeepSeek key got empty summaries
-    // because the chain previously jumped straight from Groq to Gemini.
-    if (this.openaiClient) {
-      console.log(`[LLMHelper] Attempting OpenAI/DeepSeek for summary...`);
-      try {
-        const text = await this.withTimeout(
-          this.generateWithOpenai(`Context:\n${context}`, systemPrompt),
-          60000,
-          "OpenAI Summary"
-        );
-        if (text.trim().length > 0) {
-          console.log(`[LLMHelper] ✅ OpenAI/DeepSeek summary generated successfully.`);
-          return this.processResponse(text);
-        }
-      } catch (e: any) {
-        console.warn(`[LLMHelper] ⚠️ OpenAI/DeepSeek summary failed: ${e.message}. Falling back to Gemini...`);
-      }
-    }
-
-    // ATTEMPT 3: Gemini Flash (with 2 retries = 3 attempts total)
-    console.log(`[LLMHelper] Attempting Gemini Flash for summary...`);
-    const contents = [{ text: `${systemPrompt}\n\nCONTEXT:\n${context}` }];
-
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const text = await this.withTimeout(
-          this.generateWithFlash(contents),
-          45000,
-          `Gemini Flash Summary (Attempt ${attempt})`
-        );
-        if (text.trim().length > 0) {
-          console.log(`[LLMHelper] ✅ Gemini Flash summary generated successfully (Attempt ${attempt}).`);
-          return this.processResponse(text);
-        }
-      } catch (e: any) {
-        console.warn(`[LLMHelper] ⚠️ Gemini Flash attempt ${attempt}/3 failed: ${e.message}`);
-        if (attempt < 3) {
-          await new Promise(r => setTimeout(r, 1000 * attempt)); // Linear backoff
-        }
-      }
-    }
-
-    // ATTEMPT 4: Gemini Pro
-    console.log(`[LLMHelper] ⚠️ Flash exhausted. Switching to Gemini Pro for robust retry...`);
-    const maxProRetries = 5;
-
-    if (this.client) {
-      for (let attempt = 1; attempt <= maxProRetries; attempt++) {
-        try {
-          console.log(`[LLMHelper] 🔄 Gemini Pro Attempt ${attempt}/${maxProRetries}...`);
-          const response = await this.withTimeout(
-            // @ts-ignore
-            this.client.models.generateContent({
-              model: GEMINI_PRO_MODEL,
-              contents: contents,
-              config: {
-                maxOutputTokens: MAX_OUTPUT_TOKENS,
-                temperature: 0.3,
-              }
-            }),
-            60000,
-            `Gemini Pro Summary (Attempt ${attempt})`
-          );
-          try { TokenUsageTracker.recordFromResponse('gemini', GEMINI_PRO_MODEL, response); } catch {}
-          const text = response.text || "";
-
-          if (text.trim().length > 0) {
-            console.log(`[LLMHelper] ✅ Gemini Pro summary generated successfully.`);
-            return this.processResponse(text);
-          }
-        } catch (e: any) {
-          console.warn(`[LLMHelper] ⚠️ Gemini Pro attempt ${attempt} failed: ${e.message}`);
-          // Aggressive backoff for Pro: 2s, 4s, 8s, 16s, 32s
-          const backoff = 2000 * Math.pow(2, attempt - 1);
-          console.log(`[LLMHelper] Waiting ${backoff}ms before next retry...`);
-          await new Promise(r => setTimeout(r, backoff));
-        }
-      }
-    } else {
-      console.log(`[LLMHelper] Gemini client not initialized — skipping Gemini Pro.`);
-    }
-
-    throw new Error("Failed to generate summary after all fallback attempts.");
+    throw new Error("Failed to generate summary via gateway.");
   }
 
   public async switchToOllama(model?: string, url?: string): Promise<void> {
