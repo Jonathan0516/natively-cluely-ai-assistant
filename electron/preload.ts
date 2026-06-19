@@ -174,6 +174,8 @@ interface ElectronAPI {
   showOverlay: () => Promise<void>
   hideOverlay: () => Promise<void>
   getMeetingActive: () => Promise<boolean>
+  getLlmQuota: () => Promise<{ plan: string; period_start: string; period_end: string; credits_total: number; credits_used: number; credits_remaining: number }>
+  getLlmModels: () => Promise<Array<{ id: string; label: string; tier: string; capabilities: string[]; available: boolean }>>
   onMeetingStateChanged: (callback: (data: { isActive: boolean }) => void) => () => void
   onQuotaExhausted: (callback: (data: { source: 'chat' | 'json' | 'stt'; message?: string }) => void) => () => void
   onWindowMaximizedChanged: (callback: (isMaximized: boolean) => void) => () => void
@@ -475,6 +477,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   showOverlay: () => ipcRenderer.invoke("show-overlay"),
   hideOverlay: () => ipcRenderer.invoke("hide-overlay"),
   getMeetingActive: () => ipcRenderer.invoke("get-meeting-active"),
+  getLlmQuota: () => ipcRenderer.invoke("get-llm-quota"),
+  getLlmModels: () => ipcRenderer.invoke("get-llm-models"),
   onMeetingStateChanged: (callback: (data: { isActive: boolean }) => void) => {
     const subscription = (_: any, data: { isActive: boolean }) => callback(data);
     ipcRenderer.on('meeting-state-changed', subscription);

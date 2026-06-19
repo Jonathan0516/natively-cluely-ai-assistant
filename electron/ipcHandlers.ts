@@ -730,6 +730,18 @@ export function initializeIpcHandlers(appState: AppState): void {
       throw error;
     }
   });
+  // Cloud-only Plan & Usage panel: read the user's plan/quota and available models
+  // straight from the backend gateway.
+  safeHandle("get-llm-quota", async () => {
+    const { CloudClient } = require('./services/CloudClient');
+    return await CloudClient.getInstance().getLlmQuota();
+  });
+
+  safeHandle("get-llm-models", async () => {
+    const { CloudClient } = require('./services/CloudClient');
+    return await CloudClient.getInstance().getLlmModels();
+  });
+
   // Cloud-only: the app stores no LLM/STT provider keys. Returns only the STT
   // on/off toggle and the Tavily (web-search) key presence.
   safeHandle("get-stored-credentials", async () => {

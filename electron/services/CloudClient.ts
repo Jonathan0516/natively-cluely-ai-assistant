@@ -311,6 +311,29 @@ export class CloudClient {
     return this.post(`/llm/json`, body)
   }
 
+  /** Current plan + credit usage for the authenticated user. */
+  getLlmQuota() {
+    return this.get<{
+      plan: string
+      period_start: string
+      period_end: string
+      credits_total: number
+      credits_used: number
+      credits_remaining: number
+    }>(`/llm/quota`)
+  }
+
+  /** Models available to the user's plan (tier-gated). */
+  getLlmModels() {
+    return this.get<Array<{
+      id: string
+      label: string
+      tier: string
+      capabilities: string[]
+      available: boolean
+    }>>(`/llm/models`)
+  }
+
   // --------------------------------------------------------------------- //
   // Modes                                                                 //
   // --------------------------------------------------------------------- //
