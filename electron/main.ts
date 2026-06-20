@@ -1717,20 +1717,6 @@ export class AppState {
 
 
 
-  public updateGoogleCredentials(keyPath: string): void {
-    console.log(`[AppState] Updating Google Credentials to: ${keyPath}`);
-    // Set global environment variable so new instances pick it up
-    process.env.GOOGLE_APPLICATION_CREDENTIALS = keyPath;
-
-    if (this.googleSTT) {
-      this.googleSTT.setCredentials(keyPath);
-    }
-
-    if (this.googleSTT_User) {
-      this.googleSTT_User.setCredentials(keyPath);
-    }
-  }
-
   public setRecognitionLanguage(key: string): void {
     console.log(`[AppState] Setting recognition language to: ${key}`);
     const { CredentialsManager } = require('./services/CredentialsManager');
@@ -2589,19 +2575,6 @@ async function initializeApp() {
   // See electron/services/InstallPingManager.ts for privacy details
   const { sendAnonymousInstallPing } = require('./services/InstallPingManager');
   sendAnonymousInstallPing();
-
-  // Load stored Google Service Account path (for Speech-to-Text)
-  // Fall back to GOOGLE_APPLICATION_CREDENTIALS env var (set in terminal but not Spotlight)
-  const storedServiceAccountPath = CredentialsManager.getInstance().getGoogleServiceAccountPath()
-    || process.env.GOOGLE_APPLICATION_CREDENTIALS;
-  if (storedServiceAccountPath) {
-    console.log("[Init] Loading stored Google Service Account path");
-    appState.updateGoogleCredentials(storedServiceAccountPath);
-    // Persist env-var path so Spotlight launches also work going forward
-    if (!CredentialsManager.getInstance().getGoogleServiceAccountPath()) {
-      CredentialsManager.getInstance().setGoogleServiceAccountPath(storedServiceAccountPath);
-    }
-  }
 
   console.log("App is ready")
 

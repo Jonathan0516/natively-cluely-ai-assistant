@@ -75,7 +75,6 @@ export interface ElectronAPI {
 
   // LLM Model Management
   getCurrentLlmConfig: () => Promise<{ provider: "ollama" | "gemini"; model: string; isOllama: boolean }>
-  selectServiceAccount: () => Promise<{ success: boolean; path?: string; cancelled?: boolean; error?: string }>
 
   // API Key Management
   getStoredCredentials: () => Promise<{ sttProvider: 'none' | 'deepgram'; hasTavilyKey: boolean }>

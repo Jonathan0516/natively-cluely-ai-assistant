@@ -1167,32 +1167,6 @@ export function initializeIpcHandlers(appState: AppState): void {
 
 
   // Service Account Selection
-  safeHandle("select-service-account", async () => {
-    try {
-      const result: any = await dialog.showOpenDialog({
-        properties: ['openFile'],
-        filters: [{ name: 'JSON', extensions: ['json'] }]
-      });
-
-      if (result.canceled || result.filePaths.length === 0) {
-        return { success: false, cancelled: true };
-      }
-
-      const filePath = result.filePaths[0];
-
-      // Update backend state immediately
-      appState.updateGoogleCredentials(filePath);
-
-      // Persist the path for future sessions
-      const { CredentialsManager } = require('./services/CredentialsManager');
-      CredentialsManager.getInstance().setGoogleServiceAccountPath(filePath);
-
-      return { success: true, path: filePath };
-    } catch (error: any) {
-      console.error("Error selecting service account:", error);
-      return { success: false, error: error.message };
-    }
-  });
 
   // ==========================================
   // Theme System Handlers

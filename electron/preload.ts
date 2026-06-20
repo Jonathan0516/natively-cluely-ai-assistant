@@ -48,7 +48,6 @@ interface ElectronAPI {
 
   // LLM Model Management
   getCurrentLlmConfig: () => Promise<{ provider: "ollama" | "gemini"; model: string; isOllama: boolean }>
-  selectServiceAccount: () => Promise<{ success: boolean; path?: string; cancelled?: boolean; error?: string }>
 
   // API Key Management
   getStoredCredentials: () => Promise<{ sttProvider: 'none' | 'deepgram'; hasTavilyKey: boolean }>
@@ -514,7 +513,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   // LLM Model Management
   getCurrentLlmConfig: () => ipcRenderer.invoke("get-current-llm-config"),
-  selectServiceAccount: () => ipcRenderer.invoke("select-service-account"),
 
   // API Key Management
   getStoredCredentials: () => ipcRenderer.invoke("get-stored-credentials"),
