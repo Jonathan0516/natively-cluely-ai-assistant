@@ -913,33 +913,14 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose, init
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isSttDropdownOpen]);
 
-    // Load STT settings on mount
+    // Load STT settings on mount (cloud-only: just the on/off toggle + Tavily presence).
     useEffect(() => {
         const loadSttSettings = async () => {
             try {
-                // @ts-ignore
                 const creds = await window.electronAPI?.getStoredCredentials?.();
                 if (creds) {
-                    setSttProvider(creds.sttProvider || 'none');
-                    if (creds.groqSttModel) setGroqSttModel(creds.groqSttModel);
-                    setGoogleServiceAccountPath(creds.googleServiceAccountPath);
-                    setHasStoredSttGroqKey(creds.hasSttGroqKey);
-                    setHasStoredSttOpenaiKey(creds.hasSttOpenaiKey);
-                    setHasStoredDeepgramKey(creds.hasDeepgramKey);
-                    setHasStoredElevenLabsKey(creds.hasElevenLabsKey);
-                    setHasStoredAzureKey(creds.hasAzureKey);
-                    if (creds.azureRegion) setSttAzureRegion(creds.azureRegion);
-                    setHasStoredIbmWatsonKey(creds.hasIbmWatsonKey);
-                    setHasStoredSonioxKey(creds.hasSonioxKey || false);
+                    setSttProvider(creds.sttProvider === 'none' ? 'none' : 'deepgram');
                     setHasStoredTavilyKey(creds.hasTavilyKey || false);
-                    // Populate key fields so switching providers doesn't make saved keys appear gone
-                    if (creds.sttGroqKey) setSttGroqKey(creds.sttGroqKey);
-                    if (creds.sttOpenaiKey) setSttOpenaiKey(creds.sttOpenaiKey);
-                    if (creds.sttDeepgramKey) setSttDeepgramKey(creds.sttDeepgramKey);
-                    if (creds.sttElevenLabsKey) setSttElevenLabsKey(creds.sttElevenLabsKey);
-                    if (creds.sttAzureKey) setSttAzureKey(creds.sttAzureKey);
-                    if (creds.sttIbmKey) setSttIbmKey(creds.sttIbmKey);
-                    if (creds.sttSonioxKey) setSttSonioxKey(creds.sttSonioxKey);
                 }
             } catch (e) {
                 console.error('Failed to load STT settings:', e);
@@ -954,18 +935,10 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose, init
         if (!window.electronAPI?.onCredentialsChanged) return;
         const unsubscribe = window.electronAPI.onCredentialsChanged(() => {
             if (isOpen) {
-                // Re-fetch credentials silently — purely additive, no state reset
+                // Re-fetch the STT on/off state silently.
                 window.electronAPI?.getStoredCredentials?.().then((creds: any) => {
                     if (!creds) return;
-                    setSttProvider(creds.sttProvider || 'none');
-                    if (creds.groqSttModel) setGroqSttModel(creds.groqSttModel);
-                    setHasStoredSttGroqKey(creds.hasSttGroqKey);
-                    setHasStoredSttOpenaiKey(creds.hasSttOpenaiKey);
-                    setHasStoredDeepgramKey(creds.hasDeepgramKey);
-                    setHasStoredElevenLabsKey(creds.hasElevenLabsKey);
-                    setHasStoredAzureKey(creds.hasAzureKey);
-                    setHasStoredIbmWatsonKey(creds.hasIbmWatsonKey);
-                    setHasStoredSonioxKey(creds.hasSonioxKey || false);
+                    setSttProvider(creds.sttProvider === 'none' ? 'none' : 'deepgram');
                 }).catch(() => { /* silently ignore */ });
             }
         });

@@ -9,9 +9,6 @@ const SettingsPopup = () => {
     const { shortcuts } = useShortcuts();
     const isLightTheme = useResolvedTheme() === 'light';
     const [isUndetectable, setIsUndetectable] = useState(false);
-    const [useGroqFastText, setUseGroqFastText] = useState(() => {
-        return localStorage.getItem('natively_groq_fast_text') === 'true';
-    });
     const [profileMode, setProfileMode] = useState(false);
     const [hasProfile, setHasProfile] = useState(false);
 
@@ -19,23 +16,9 @@ const SettingsPopup = () => {
 
     const [hasStoredKey, setHasStoredKey] = useState<Record<string, boolean>>({});
 
-    // Load credentials func
-    const loadCredentials = async () => {
-        try {
-            // @ts-ignore
-            const creds = await window.electronAPI?.getStoredCredentials?.();
-            if (creds) {
-                setHasStoredKey({
-                    gemini: !!creds.hasGeminiKey,
-                    groq: !!creds.hasGroqKey,
-                    openai: !!creds.hasOpenaiKey,
-                    claude: !!creds.hasClaudeKey
-                });
-            }
-        } catch (e) {
-            console.error("Failed to load settings:", e);
-        }
-    };
+    // Cloud-only: no provider keys to load. Retained as a no-op so the focus/mount
+    // refresh wiring below stays intact.
+    const loadCredentials = async () => {};
 
     // Load Initial Data and refresh on focus
     useEffect(() => {
@@ -79,41 +62,6 @@ const SettingsPopup = () => {
             return () => unsubscribe();
         }
     }, []);
-
-    useEffect(() => {
-        // Listen for changes from other windows (2-way sync)
-        if (window.electronAPI?.onGroqFastTextChanged) {
-            const unsubscribe = window.electronAPI.onGroqFastTextChanged((enabled: boolean) => {
-                setUseGroqFastText(enabled);
-                localStorage.setItem('natively_groq_fast_text', String(enabled));
-            });
-            return () => unsubscribe();
-        }
-    }, []);
-
-    useEffect(() => {
-        // Skip initial render to avoid unnecessary IPC calls
-        if (isFirstRender.current) {
-            isFirstRender.current = false;
-            // Ensure backend is synced on mount (even if no change)
-            try {
-                // @ts-ignore
-                window.electronAPI?.invoke('set-groq-fast-text-mode', useGroqFastText);
-            } catch (e) {
-                console.error(e);
-            }
-            return;
-        }
-
-        // Apply Groq Text Mode
-        localStorage.setItem('natively_groq_fast_text', String(useGroqFastText));
-        try {
-            // @ts-ignore - electronAPI not typed in this file yet
-            window.electronAPI?.invoke('set-groq-fast-text-mode', useGroqFastText);
-        } catch (e) {
-            console.error(e);
-        }
-    }, [useGroqFastText]);
 
     const [actionButtonMode, setActionButtonModeState] = useState<'recap' | 'brainstorm'>('recap');
 
@@ -217,27 +165,6 @@ const SettingsPopup = () => {
                     </button>
                 </div>
 
-
-                {/* Groq (Fast Text) Toggle — requires Groq key */}
-                <div className={`flex items-center justify-between px-3 py-2 rounded-lg transition-colors duration-200 group ${!hasStoredKey.groq ? 'opacity-50 grayscale cursor-not-allowed' : `${itemHoverClass} cursor-default`}`} title={!hasStoredKey.groq ? t('settingsPopup.requiresGroqKey') : ""}>
-                    <div className="flex items-center gap-3">
-                        <Zap
-                            className={`w-4 h-4 transition-colors ${useGroqFastText ? 'text-orange-500' : iconInactiveClass}`}
-                            fill={useGroqFastText ? "currentColor" : "none"}
-                        />
-                        <span className={`text-[12px] font-medium transition-colors ${useGroqFastText ? (isLightTheme ? 'text-slate-950' : 'text-white') : labelInactiveClass}`}>{t('settingsPopup.fastResponse')}</span>
-                    </div>
-                    <button
-                        onClick={() => {
-                            if (!hasStoredKey.groq) return;
-                            setUseGroqFastText(!useGroqFastText);
-                        }}
-                        className={`w-[30px] h-[18px] rounded-full p-[1.5px] transition-all duration-300 ease-spring active:scale-[0.92] ${useGroqFastText ? 'bg-orange-500 shadow-[0_2px_10px_rgba(249,115,22,0.3)]' : defaultToggleTrackClass}`}
-                        disabled={!hasStoredKey.groq}
-                    >
-                        <div className={`w-[15px] h-[15px] rounded-full transition-transform duration-300 ease-spring ${toggleKnobClass} ${useGroqFastText ? 'translate-x-[12px]' : 'translate-x-0'}`} />
-                    </button>
-                </div>
 
                 {/* Interviewer Transcript Toggle */}
                 <div className={`flex items-center justify-between px-3 py-2 rounded-lg transition-colors duration-200 group cursor-default ${itemHoverClass}`}>

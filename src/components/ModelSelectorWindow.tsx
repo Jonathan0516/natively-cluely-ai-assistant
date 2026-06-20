@@ -39,63 +39,12 @@ const ModelSelectorWindow = () => {
                     setIsLoading(true);
                 }
                 
-                // 1. Get Stored Credentials (to know which Cloud providers are active)
-                const creds = await window.electronAPI?.getStoredCredentials?.();
-
-                // 2. Custom Providers
-                const customProviders = await window.electronAPI?.getCustomProviders?.() || [];
-
-                // 3. Ollama
-                let ollamaModels: string[] = [];
-                try {
-                    let oModels = await window.electronAPI?.getAvailableOllamaModels?.();
-
-                    // If no models found, try to fix/restart Ollama (server might be down)
-                    if (!oModels || oModels.length === 0) {
-                        try {
-                            // @ts-ignore
-                            if (window.electronAPI?.forceRestartOllama) {
-                                // @ts-ignore
-                                await window.electronAPI.forceRestartOllama();
-                                // Wait a moment for server to come up
-                                await new Promise(resolve => setTimeout(resolve, 1500));
-                                // Retry fetch
-                                oModels = await window.electronAPI?.getAvailableOllamaModels?.();
-                            }
-                        } catch (e) {
-                            console.warn("Retrying Ollama failed", e);
-                        }
-                    }
-
-                    if (oModels) ollamaModels = oModels;
-                } catch (e) {
-                    // Ignore ollama errors here
-                }
-
-                // Build the list
-                const models: ModelOption[] = [];
-
-                // Cloud Models — standard models + unique preferred models
-                for (const [prov, cfg] of Object.entries(STANDARD_CLOUD_MODELS)) {
-                    if (!cfg.hasKeyCheck(creds)) continue;
-                    cfg.ids.forEach((id, i) => {
-                        models.push({ id, name: cfg.names[i], type: 'cloud', provider: prov });
-                    });
-                    const pm = creds?.[cfg.pmKey];
-                    if (pm && !cfg.ids.includes(pm)) {
-                        models.push({ id: pm, name: prettifyModelId(pm), type: 'cloud', provider: prov });
-                    }
-                }
-
-                // Custom Providers
-                customProviders.forEach((p: any) => {
-                    models.push({ id: p.id, name: p.name, type: 'custom' });
-                });
-
-                // Ollama
-                ollamaModels.forEach((m: string) => {
-                    models.push({ id: `ollama-${m}`, name: `${m} (Local)`, type: 'ollama' });
-                });
+                // Cloud-only: the model list comes from the backend catalog, gated by
+                // the user's plan. No credentials / custom / Ollama providers.
+                const catalog = await window.electronAPI.getLlmModels();
+                const models: ModelOption[] = (catalog || [])
+                    .filter(m => m.available)
+                    .map(m => ({ id: m.id, name: m.label, type: 'cloud' as const, provider: m.tier }));
 
                 localStorage.setItem('cached-models', JSON.stringify(models));
                 setAvailableModels(models);

@@ -40,27 +40,12 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ currentModel, onSe
 
         const loadData = async () => {
             try {
-                // Load Custom
-                const custom = await window.electronAPI?.getCustomProviders() as CustomProvider[];
-                if (custom) setCustomProviders(custom);
-
-                // Load Ollama
-                const local = await window.electronAPI?.getAvailableOllamaModels() as string[];
-                if (local) setOllamaModels(local);
-
-                // Build dynamic cloud models from credentials
-                // @ts-ignore
-                const creds = await window.electronAPI?.getStoredCredentials?.();
-                const cModels: { id: string; name: string; desc: string; provider: string }[] = [];
-
-                for (const [prov, cfg] of Object.entries(STANDARD_CLOUD_MODELS)) {
-                    if (!cfg.hasKeyCheck(creds)) continue;
-                    cfg.ids.forEach((id, i) => cModels.push({ id, name: cfg.names[i], desc: cfg.descs[i], provider: prov }));
-                    const pm = creds?.[cfg.pmKey];
-                    if (pm && !cfg.ids.includes(pm)) {
-                        cModels.push({ id: pm, name: prettifyModelId(pm), desc: t('modelSelector.preferredSuffix', { provider: prov.charAt(0).toUpperCase() + prov.slice(1) }), provider: prov });
-                    }
-                }
+                // Cloud-only: the model list comes from the backend catalog, gated by the
+                // user's plan. No local/custom/Ollama providers.
+                const models = await window.electronAPI.getLlmModels();
+                const cModels = (models || [])
+                    .filter(m => m.available)
+                    .map(m => ({ id: m.id, name: m.label, desc: m.tier, provider: 'cloud' }));
                 setCloudModels(cModels);
             } catch (e) {
                 console.error("Failed to load models:", e);

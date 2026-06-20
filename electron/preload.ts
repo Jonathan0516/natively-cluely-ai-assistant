@@ -48,34 +48,15 @@ interface ElectronAPI {
 
   // LLM Model Management
   getCurrentLlmConfig: () => Promise<{ provider: "ollama" | "gemini"; model: string; isOllama: boolean }>
-  getAvailableOllamaModels: () => Promise<string[]>
-  switchToOllama: (model?: string, url?: string) => Promise<{ success: boolean; error?: string }>
-  switchToGemini: (apiKey?: string, modelId?: string) => Promise<{ success: boolean; error?: string }>
-  testLlmConnection: (provider: 'gemini' | 'groq' | 'openai' | 'claude', apiKey?: string) => Promise<{ success: boolean; error?: string }>
   selectServiceAccount: () => Promise<{ success: boolean; path?: string; cancelled?: boolean; error?: string }>
 
   // API Key Management
-  setGeminiApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  setGroqApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  setOpenaiApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  setClaudeApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  getStoredCredentials: () => Promise<{ hasGeminiKey: boolean; hasGroqKey: boolean; hasOpenaiKey: boolean; hasClaudeKey: boolean; googleServiceAccountPath: string | null; sttProvider: string; hasSttGroqKey: boolean; hasSttOpenaiKey: boolean; hasDeepgramKey: boolean; hasElevenLabsKey: boolean; hasAzureKey: boolean; azureRegion: string; hasIbmWatsonKey: boolean; ibmWatsonRegion: string; hasSonioxKey: boolean }>
+  getStoredCredentials: () => Promise<{ sttProvider: 'none' | 'deepgram'; hasTavilyKey: boolean }>
   onModesActiveCleared: (cb: () => void) => () => void
 
   // STT Provider Management
-  setSttProvider: (provider: 'none' | 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox') => Promise<{ success: boolean; error?: string }>
-  getSttProvider: () => Promise<string>
-  setGroqSttApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  setOpenAiSttApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  setDeepgramApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  setElevenLabsApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  setAzureApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  setAzureRegion: (region: string) => Promise<{ success: boolean; error?: string }>
-  setIbmWatsonApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  setGroqSttModel: (model: string) => Promise<{ success: boolean; error?: string }>
-  setSonioxApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  setIbmWatsonRegion: (region: string) => Promise<{ success: boolean; error?: string }>
-  testSttConnection: (provider: 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox', apiKey: string, region?: string) => Promise<{ success: boolean; error?: string }>
+  setSttProvider: (provider: 'none' | 'deepgram') => Promise<{ success: boolean; error?: string }>
+  getSttProvider: () => Promise<'none' | 'deepgram'>
 
   // STT Config Events
   onSttConfigChanged: (callback: (data: { configured: boolean; provider: string }) => void) => () => void
@@ -139,22 +120,16 @@ interface ElectronAPI {
   setModel: (modelId: string) => Promise<{ success: boolean; error?: string }>
   setDefaultModel: (modelId: string) => Promise<{ success: boolean; error?: string }>
   toggleModelSelector: (coords: { x: number; y: number }) => Promise<void>
-  forceRestartOllama: () => Promise<void>
 
   // Settings Window
   toggleSettingsWindow: (coords?: { x: number; y: number }) => Promise<void>
 
   // Groq Fast Text Mode
-  getGroqFastTextMode: () => Promise<{ enabled: boolean }>
-  setGroqFastTextMode: (enabled: boolean) => Promise<{ success: boolean; error?: string }>
 
   // Demo
   seedDemo: () => Promise<{ success: boolean }>
 
   // Custom Providers
-  saveCustomProvider: (provider: any) => Promise<{ success: boolean; id?: string; error?: string }>
-  getCustomProviders: () => Promise<any[]>
-  deleteCustomProvider: (id: string) => Promise<{ success: boolean; error?: string }>
 
   // Follow-up Email
   generateFollowupEmail: (input: any) => Promise<string>
@@ -197,7 +172,6 @@ interface ElectronAPI {
 
 
   onUndetectableChanged: (callback: (state: boolean) => void) => () => void
-  onGroqFastTextChanged: (callback: (enabled: boolean) => void) => () => void
   onModelChanged: (callback: (modelId: string) => void) => () => void
 
   // Ollama
@@ -542,17 +516,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   // LLM Model Management
   getCurrentLlmConfig: () => ipcRenderer.invoke("get-current-llm-config"),
-  getAvailableOllamaModels: () => ipcRenderer.invoke("get-available-ollama-models"),
-  switchToOllama: (model?: string, url?: string) => ipcRenderer.invoke("switch-to-ollama", model, url),
-  switchToGemini: (apiKey?: string, modelId?: string) => ipcRenderer.invoke("switch-to-gemini", apiKey, modelId),
-  testLlmConnection: (provider: 'gemini' | 'groq' | 'openai' | 'claude', apiKey: string) => ipcRenderer.invoke("test-llm-connection", provider, apiKey),
   selectServiceAccount: () => ipcRenderer.invoke("select-service-account"),
 
   // API Key Management
-  setGeminiApiKey: (apiKey: string) => ipcRenderer.invoke("set-gemini-api-key", apiKey),
-  setGroqApiKey: (apiKey: string) => ipcRenderer.invoke("set-groq-api-key", apiKey),
-  setOpenaiApiKey: (apiKey: string) => ipcRenderer.invoke("set-openai-api-key", apiKey),
-  setClaudeApiKey: (apiKey: string) => ipcRenderer.invoke("set-claude-api-key", apiKey),
   getStoredCredentials: () => ipcRenderer.invoke("get-stored-credentials"),
 
   // Permissions
@@ -560,19 +526,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   requestMicPermission: () => ipcRenderer.invoke("permissions:request-mic"),
 
   // STT Provider Management
-  setSttProvider: (provider: 'none' | 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox') => ipcRenderer.invoke("set-stt-provider", provider),
+  setSttProvider: (provider: 'none' | 'deepgram') => ipcRenderer.invoke("set-stt-provider", provider),
   getSttProvider: () => ipcRenderer.invoke("get-stt-provider"),
-  setGroqSttApiKey: (apiKey: string) => ipcRenderer.invoke("set-groq-stt-api-key", apiKey),
-  setOpenAiSttApiKey: (apiKey: string) => ipcRenderer.invoke("set-openai-stt-api-key", apiKey),
-  setDeepgramApiKey: (apiKey: string) => ipcRenderer.invoke("set-deepgram-api-key", apiKey),
-  setElevenLabsApiKey: (apiKey: string) => ipcRenderer.invoke("set-elevenlabs-api-key", apiKey),
-  setAzureApiKey: (apiKey: string) => ipcRenderer.invoke("set-azure-api-key", apiKey),
-  setAzureRegion: (region: string) => ipcRenderer.invoke("set-azure-region", region),
-  setIbmWatsonApiKey: (apiKey: string) => ipcRenderer.invoke("set-ibmwatson-api-key", apiKey),
-  setGroqSttModel: (model: string) => ipcRenderer.invoke("set-groq-stt-model", model),
-  setSonioxApiKey: (apiKey: string) => ipcRenderer.invoke("set-soniox-api-key", apiKey),
-  setIbmWatsonRegion: (region: string) => ipcRenderer.invoke("set-ibmwatson-region", region),
-  testSttConnection: (provider: 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox', apiKey: string, region?: string) => ipcRenderer.invoke("test-stt-connection", provider, apiKey, region),
 
   // STT Config Events (Adapted from public PR #173 — verify premium interaction)
   onSttConfigChanged: (callback: (data: { configured: boolean; provider: string }) => void) => {
@@ -870,22 +825,16 @@ contextBridge.exposeInMainWorld("electronAPI", {
   setModel: (modelId: string) => ipcRenderer.invoke('set-model', modelId),
   setDefaultModel: (modelId: string) => ipcRenderer.invoke('set-default-model', modelId),
   toggleModelSelector: (coords: { x: number; y: number }) => ipcRenderer.invoke('toggle-model-selector', coords),
-  forceRestartOllama: () => ipcRenderer.invoke('force-restart-ollama'),
 
   // Settings Window
   toggleSettingsWindow: (coords?: { x: number; y: number }) => ipcRenderer.invoke('toggle-settings-window', coords),
 
   // Groq Fast Text Mode
-  getGroqFastTextMode: () => ipcRenderer.invoke('get-groq-fast-text-mode'),
-  setGroqFastTextMode: (enabled: boolean) => ipcRenderer.invoke('set-groq-fast-text-mode', enabled),
 
   // Demo
   seedDemo: () => ipcRenderer.invoke('seed-demo'),
 
   // Custom Providers
-  saveCustomProvider: (provider: any) => ipcRenderer.invoke('save-custom-provider', provider),
-  getCustomProviders: () => ipcRenderer.invoke('get-custom-providers'),
-  deleteCustomProvider: (id: string) => ipcRenderer.invoke('delete-custom-provider', id),
 
   // Follow-up Email
   generateFollowupEmail: (input: any) => ipcRenderer.invoke('generate-followup-email', input),
@@ -922,14 +871,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on('overlay-mouse-passthrough-changed', subscription)
     return () => {
       ipcRenderer.removeListener('overlay-mouse-passthrough-changed', subscription)
-    }
-  },
-
-  onGroqFastTextChanged: (callback: (enabled: boolean) => void) => {
-    const subscription = (_: any, enabled: boolean) => callback(enabled)
-    ipcRenderer.on('groq-fast-text-changed', subscription)
-    return () => {
-      ipcRenderer.removeListener('groq-fast-text-changed', subscription)
     }
   },
 
@@ -1119,8 +1060,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   setTavilyApiKey: (apiKey: string) => ipcRenderer.invoke('set-tavily-api-key', apiKey),
 
   // Dynamic Model Discovery
-  fetchProviderModels: (provider: 'gemini' | 'groq' | 'openai' | 'claude', apiKey: string) => ipcRenderer.invoke('fetch-provider-models', provider, apiKey),
-  setProviderPreferredModel: (provider: 'gemini' | 'groq' | 'openai' | 'claude', modelId: string) => ipcRenderer.invoke('set-provider-preferred-model', provider, modelId),
 
   // License Management
   licenseActivate: (key: string) => ipcRenderer.invoke('license:activate', key),

@@ -742,6 +742,22 @@ export function initializeIpcHandlers(appState: AppState): void {
     return await CloudClient.getInstance().getLlmModels();
   });
 
+  // Cloud STT on/off toggle (transcription always runs through the backend relay).
+  safeHandle("set-stt-provider", async (_, provider: 'none' | 'deepgram') => {
+    try {
+      const { CredentialsManager } = require('./services/CredentialsManager');
+      CredentialsManager.getInstance().setSttProvider(provider === 'none' ? 'none' : 'deepgram');
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  safeHandle("get-stt-provider", async () => {
+    const { CredentialsManager } = require('./services/CredentialsManager');
+    return CredentialsManager.getInstance().getSttProvider();
+  });
+
   // Cloud-only: the app stores no LLM/STT provider keys. Returns only the STT
   // on/off toggle and the Tavily (web-search) key presence.
   safeHandle("get-stored-credentials", async () => {

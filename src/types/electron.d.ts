@@ -75,36 +75,17 @@ export interface ElectronAPI {
 
   // LLM Model Management
   getCurrentLlmConfig: () => Promise<{ provider: "ollama" | "gemini"; model: string; isOllama: boolean }>
-  getAvailableOllamaModels: () => Promise<string[]>
-  switchToOllama: (model?: string, url?: string) => Promise<{ success: boolean; error?: string }>
-  switchToGemini: (apiKey?: string, modelId?: string) => Promise<{ success: boolean; error?: string }>
-  testLlmConnection: (provider: 'gemini' | 'groq' | 'openai' | 'claude', apiKey?: string) => Promise<{ success: boolean; error?: string }>
   selectServiceAccount: () => Promise<{ success: boolean; path?: string; cancelled?: boolean; error?: string }>
 
   // API Key Management
-  setGeminiApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  setGroqApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  setOpenaiApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  setClaudeApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  getStoredCredentials: () => Promise<{ hasGeminiKey: boolean; hasGroqKey: boolean; hasOpenaiKey: boolean; hasClaudeKey: boolean; googleServiceAccountPath: string | null; sttProvider: 'none' | 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox'; hasSttGroqKey: boolean; hasSttOpenaiKey: boolean; hasDeepgramKey: boolean; hasElevenLabsKey: boolean; hasAzureKey: boolean; azureRegion: string; hasIbmWatsonKey: boolean; ibmWatsonRegion: string; groqSttModel?: string; hasSonioxKey?: boolean; hasTavilyKey?: boolean; geminiPreferredModel?: string; groqPreferredModel?: string; openaiPreferredModel?: string; claudePreferredModel?: string; sttGroqKey?: string; sttOpenaiKey?: string; sttDeepgramKey?: string; sttElevenLabsKey?: string; sttAzureKey?: string; sttIbmKey?: string; sttSonioxKey?: string }>
+  getStoredCredentials: () => Promise<{ sttProvider: 'none' | 'deepgram'; hasTavilyKey: boolean }>
   // Permissions
   checkPermissions:     () => Promise<{ microphone: 'granted'|'denied'|'not-determined'|'restricted'; screen: 'granted'|'denied'|'not-determined'|'restricted'; platform: string }>
   requestMicPermission: () => Promise<boolean>
 
-  // STT Provider Management
-  setSttProvider: (provider: 'none' | 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox') => Promise<{ success: boolean; error?: string }>
-  getSttProvider: () => Promise<string>
-  setGroqSttApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  setOpenAiSttApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  setDeepgramApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  setElevenLabsApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  setAzureApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  setAzureRegion: (region: string) => Promise<{ success: boolean; error?: string }>
-  setIbmWatsonApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  setGroqSttModel: (model: string) => Promise<{ success: boolean; error?: string }>
-  setSonioxApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
-  setIbmWatsonRegion: (region: string) => Promise<{ success: boolean; error?: string }>
-  testSttConnection: (provider: 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox', apiKey: string, region?: string) => Promise<{ success: boolean; error?: string }>
+  // STT on/off (cloud relay always handles transcription when enabled)
+  setSttProvider: (provider: 'none' | 'deepgram') => Promise<{ success: boolean; error?: string }>
+  getSttProvider: () => Promise<'none' | 'deepgram'>
 
   // STT Config Events (fired when STT provider/key changes during a meeting)
   onSttConfigChanged: (callback: (data: { configured: boolean; provider: string }) => void) => () => void
@@ -211,22 +192,16 @@ export interface ElectronAPI {
   setModel: (modelId: string) => Promise<{ success: boolean; error?: string }>;
   setDefaultModel: (modelId: string) => Promise<{ success: boolean; error?: string }>;
   toggleModelSelector: (coords: { x: number; y: number }) => Promise<void>;
-  forceRestartOllama: () => Promise<void>;
 
   // Settings Window
   toggleSettingsWindow: (coords?: { x: number; y: number }) => Promise<void>;
 
   // Groq Fast Text Mode
-  getGroqFastTextMode: () => Promise<{ enabled: boolean }>;
-  setGroqFastTextMode: (enabled: boolean) => Promise<{ success: boolean; error?: string }>;
 
   // Demo
   seedDemo: () => Promise<{ success: boolean }>;
 
   // Custom Providers
-  saveCustomProvider: (provider: any) => Promise<{ success: boolean; id?: string; error?: string }>;
-  getCustomProviders: () => Promise<any[]>;
-  deleteCustomProvider: (id: string) => Promise<{ success: boolean; error?: string }>;
 
   // Follow-up Email
   generateFollowupEmail: (input: any) => Promise<string>;
@@ -243,7 +218,6 @@ export interface ElectronAPI {
   flushDatabase: () => Promise<{ success: boolean }>;
 
   onUndetectableChanged: (callback: (state: boolean) => void) => () => void;
-  onGroqFastTextChanged: (callback: (enabled: boolean) => void) => () => void;
   onModelChanged: (callback: (modelId: string) => void) => () => void;
 
   onOllamaPullProgress: (callback: (data: { status: string; percent: number }) => void) => () => void;
@@ -329,8 +303,6 @@ export interface ElectronAPI {
   setTavilyApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>
 
   // Dynamic Model Discovery
-  fetchProviderModels: (provider: 'gemini' | 'groq' | 'openai' | 'claude', apiKey: string) => Promise<{ success: boolean; models?: {id: string, label: string}[]; error?: string }>
-  setProviderPreferredModel: (provider: 'gemini' | 'groq' | 'openai' | 'claude', modelId: string) => Promise<void>
 
   // License Management
   licenseActivate: (key: string) => Promise<{ success: boolean; error?: string }>
