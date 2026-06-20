@@ -945,129 +945,15 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose, init
         return () => unsubscribe();
     }, []); // mount-once: isOpen is checked inside the callback
 
-    const handleSttProviderChange = async (provider: 'none' | 'google' | 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox') => {
+    const handleSttProviderChange = async (provider: 'none' | 'deepgram') => {
         setSttProvider(provider);
         setIsSttDropdownOpen(false);
         setSttTestStatus('idle');
         setSttTestError('');
         try {
-            // @ts-ignore
             await window.electronAPI?.setSttProvider?.(provider);
         } catch (e) {
             console.error('Failed to set STT provider:', e);
-        }
-    };
-
-    const handleSttKeySubmit = async (provider: 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox', key: string) => {
-        if (!key.trim()) return;
-
-        // Auto-test before saving
-        setSttSaving(true);
-        setSttTestStatus('testing');
-        setSttTestError('');
-
-        try {
-            // @ts-ignore
-            const testResult = await window.electronAPI?.testSttConnection?.(
-                provider,
-                key.trim(),
-                provider === 'azure' ? sttAzureRegion : undefined
-            );
-
-            if (!testResult?.success) {
-                setSttTestStatus('error');
-                setSttTestError(testResult?.error || 'Validation failed. Key not saved.');
-                setSttSaving(false);
-                return; // Stop save
-            }
-
-            // If success, proceed to save
-            setSttTestStatus('success');
-            setTimeout(() => setSttTestStatus('idle'), 3000);
-
-            if (provider === 'groq') {
-                // @ts-ignore
-                await window.electronAPI?.setGroqSttApiKey?.(key.trim());
-            } else if (provider === 'openai') {
-                // @ts-ignore
-                await window.electronAPI?.setOpenAiSttApiKey?.(key.trim());
-            } else if (provider === 'elevenlabs') {
-                // @ts-ignore
-                await window.electronAPI?.setElevenLabsApiKey?.(key.trim());
-            } else if (provider === 'azure') {
-                // @ts-ignore
-                await window.electronAPI?.setAzureApiKey?.(key.trim());
-            } else if (provider === 'ibmwatson') {
-                // @ts-ignore
-                await window.electronAPI?.setIbmWatsonApiKey?.(key.trim());
-            } else if (provider === 'soniox') {
-                // @ts-ignore
-                await window.electronAPI?.setSonioxApiKey?.(key.trim());
-            } else {
-                // @ts-ignore
-                await window.electronAPI?.setDeepgramApiKey?.(key.trim());
-            }
-            if (provider === 'groq') setHasStoredSttGroqKey(true);
-            else if (provider === 'openai') setHasStoredSttOpenaiKey(true);
-            else if (provider === 'elevenlabs') setHasStoredElevenLabsKey(true);
-            else if (provider === 'azure') setHasStoredAzureKey(true);
-            else if (provider === 'ibmwatson') setHasStoredIbmWatsonKey(true);
-            else if (provider === 'soniox') setHasStoredSonioxKey(true);
-            else setHasStoredDeepgramKey(true);
-
-            setSttSaved(true);
-            setTimeout(() => setSttSaved(false), 2000);
-        } catch (e: any) {
-            console.error(`Failed to save ${provider} STT key:`, e);
-            setSttTestStatus('error');
-            setSttTestError(e.message || 'Validation failed');
-        } finally {
-            setSttSaving(false);
-        }
-    };
-
-    const handleRemoveSttKey = async (provider: 'groq' | 'openai' | 'deepgram' | 'elevenlabs' | 'azure' | 'ibmwatson' | 'soniox') => {
-        if (!confirm(`Are you sure you want to remove the ${provider === 'ibmwatson' ? 'IBM Watson' : provider.charAt(0).toUpperCase() + provider.slice(1)} API key?`)) return;
-
-        try {
-            if (provider === 'groq') {
-                // @ts-ignore
-                await window.electronAPI?.setGroqSttApiKey?.('');
-                setSttGroqKey('');
-                setHasStoredSttGroqKey(false);
-            } else if (provider === 'openai') {
-                // @ts-ignore
-                await window.electronAPI?.setOpenAiSttApiKey?.('');
-                setSttOpenaiKey('');
-                setHasStoredSttOpenaiKey(false);
-            } else if (provider === 'elevenlabs') {
-                // @ts-ignore
-                await window.electronAPI?.setElevenLabsApiKey?.('');
-                setSttElevenLabsKey('');
-                setHasStoredElevenLabsKey(false);
-            } else if (provider === 'azure') {
-                // @ts-ignore
-                await window.electronAPI?.setAzureApiKey?.('');
-                setSttAzureKey('');
-                setHasStoredAzureKey(false);
-            } else if (provider === 'ibmwatson') {
-                // @ts-ignore
-                await window.electronAPI?.setIbmWatsonApiKey?.('');
-                setSttIbmKey('');
-                setHasStoredIbmWatsonKey(false);
-            } else if (provider === 'soniox') {
-                // @ts-ignore
-                await window.electronAPI?.setSonioxApiKey?.('');
-                setSttSonioxKey('');
-                setHasStoredSonioxKey(false);
-            } else {
-                // @ts-ignore
-                await window.electronAPI?.setDeepgramApiKey?.('');
-                setSttDeepgramKey('');
-                setHasStoredDeepgramKey(false);
-            }
-        } catch (e) {
-            console.error(`Failed to remove ${provider} STT key:`, e);
         }
     };
 
@@ -1080,42 +966,6 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose, init
             setHasStoredTavilyKey(false);
         } catch (e) {
             console.error('Failed to remove Tavily API key:', e);
-        }
-    };
-
-    const handleTestSttConnection = async () => {
-        if (sttProvider === 'none' || sttProvider === 'google') return;
-        const keyMap: Record<string, string> = {
-            groq: sttGroqKey, openai: sttOpenaiKey, deepgram: sttDeepgramKey,
-            elevenlabs: sttElevenLabsKey, azure: sttAzureKey, ibmwatson: sttIbmKey,
-            soniox: sttSonioxKey,
-        };
-        const keyToTest = keyMap[sttProvider] || '';
-        if (!keyToTest.trim()) {
-            setSttTestStatus('error');
-            setSttTestError('Please enter an API key first');
-            return;
-        }
-
-        setSttTestStatus('testing');
-        setSttTestError('');
-        try {
-            // @ts-ignore
-            const result = await window.electronAPI?.testSttConnection?.(
-                sttProvider,
-                keyToTest.trim(),
-                sttProvider === 'azure' ? sttAzureRegion : undefined
-            );
-            if (result?.success) {
-                setSttTestStatus('success');
-                setTimeout(() => setSttTestStatus('idle'), 3000);
-            } else {
-                setSttTestStatus('error');
-                setSttTestError(result?.error || 'Connection failed');
-            }
-        } catch (e: any) {
-            setSttTestStatus('error');
-            setSttTestError(e.message || 'Test failed');
         }
     };
 
