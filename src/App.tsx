@@ -123,9 +123,6 @@ const App: React.FC = () => {
   const [showEndMeetingConfirm, setShowEndMeetingConfirm] = useState<boolean>(false);
   
   // Ollama Auto-Pull State
-  const [ollamaPullStatus, setOllamaPullStatus] = useState<'idle' | 'downloading' | 'complete' | 'failed'>('idle');
-  const [ollamaPullPercent, setOllamaPullPercent] = useState<number>(0);
-  const [ollamaPullMessage, setOllamaPullMessage] = useState<string>('');
 
   // Re-index State
   const [incompatibleWarning, setIncompatibleWarning] = useState<{count: number; oldProvider: string; newProvider: string} | null>(null);
@@ -212,24 +209,6 @@ const App: React.FC = () => {
       setLastMeetingEndTime(Date.now());
     });
 
-    // Listen for Ollama Auto-Pull Progress
-    let removeProgress: (() => void) | undefined;
-    let removeComplete: (() => void) | undefined;
-    if (window.electronAPI?.onOllamaPullProgress && window.electronAPI?.onOllamaPullComplete) {
-      removeProgress = window.electronAPI.onOllamaPullProgress((data) => {
-        setOllamaPullStatus('downloading');
-        setOllamaPullPercent(data.percent || 0);
-        setOllamaPullMessage(data.status || t('app.downloadingDefault'));
-      });
-
-      removeComplete = window.electronAPI.onOllamaPullComplete(() => {
-        setOllamaPullStatus('complete');
-        setOllamaPullMessage(t('app.localAiMemoryReady'));
-        setOllamaPullPercent(100);
-        setTimeout(() => setOllamaPullStatus('idle'), 3000);
-      });
-    }
-
     let removeWarning: (() => void) | undefined;
     if (window.electronAPI?.onIncompatibleProviderWarning) {
       removeWarning = window.electronAPI.onIncompatibleProviderWarning((data) => {
@@ -246,8 +225,6 @@ const App: React.FC = () => {
 
     return () => {
       if (removeMeetingsListener) removeMeetingsListener();
-      if (removeProgress) removeProgress();
-      if (removeComplete) removeComplete();
       if (removeWarning) removeWarning();
       if (removeLicenseListener) removeLicenseListener();
       if (removeOpenSettingsTab) removeOpenSettingsTab();
@@ -479,9 +456,6 @@ const App: React.FC = () => {
                     }}
                     onOpenModes={() => setIsModesOpen(true)}
                     onPageChange={setIsLauncherMainView}
-                    ollamaPullStatus={ollamaPullStatus}
-                    ollamaPullPercent={ollamaPullPercent}
-                    ollamaPullMessage={ollamaPullMessage}
                     viewRequest={launcherViewRequest}
                   />
                 </div>

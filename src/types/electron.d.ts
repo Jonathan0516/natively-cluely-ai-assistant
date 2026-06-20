@@ -220,8 +220,6 @@ export interface ElectronAPI {
   onUndetectableChanged: (callback: (state: boolean) => void) => () => void;
   onModelChanged: (callback: (modelId: string) => void) => () => void;
 
-  onOllamaPullProgress: (callback: (data: { status: string; percent: number }) => void) => () => void;
-  onOllamaPullComplete: (callback: () => void) => () => void;
 
   onMeetingsUpdated: (callback: () => void) => () => void
 

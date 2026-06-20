@@ -208,7 +208,6 @@ import { CredentialsManager } from "./services/CredentialsManager"
 import { SettingsManager } from "./services/SettingsManager"
 import { setVerboseLoggingFlag } from "./verboseLog"
 import { ReleaseNotesManager } from "./update/ReleaseNotesManager"
-import { OllamaManager } from './services/OllamaManager'
 import { appEvents, QuotaExhaustedPayload } from './appEvents'
 
 export class AppState {
@@ -249,7 +248,6 @@ export class AppState {
   private _disguiseTimers: NodeJS.Timeout[] = []; // Track forceUpdate timeouts
   private _dockDebounceTimer: NodeJS.Timeout | null = null; // Debounce dock state changes
   private _dockReassertTimers: NodeJS.Timeout[] = []; // Re-assert dock-hidden state after show+focus
-  private _ollamaBootstrapPromise: Promise<void> | null = null;
   private screenshotCaptureInProgress: boolean = false;
 
 
@@ -447,10 +445,6 @@ export class AppState {
 
     // Initialize RAGManager (requires database to be ready)
     this.initializeRAGManager()
-    
-    // Check and prep Ollama embedding model
-    this.bootstrapOllamaEmbeddings()
-
 
     this.setupIntelligenceEvents()
 
@@ -518,38 +512,6 @@ export class AppState {
     } catch (e) {
       console.error('[Main] Failed to force-end meeting on quota exhaustion:', e);
     }
-  }
-
-  private async bootstrapOllamaEmbeddings() {
-    this._ollamaBootstrapPromise = (async () => {
-      try {
-        const { OllamaBootstrap } = require('./rag/OllamaBootstrap');
-        const bootstrap = new OllamaBootstrap();
-
-        // Fire and forget — don't await this before showing the window
-        const result = await bootstrap.bootstrap('nomic-embed-text', (status: string, percent: number) => {
-          // Send progress to renderer via IPC
-          this.broadcast('ollama:pull-progress', { status, percent });
-        });
-
-        if (result === 'pulled' || result === 'already_pulled') {
-          this.broadcast('ollama:pull-complete');
-          // Re-resolve the embedding provider given that Ollama might now be available
-          if (this.ragManager) {
-             console.log('[AppState] Ollama model ready, re-evaluating RAG pipeline provider');
-             // Cloud-only for LLM keys: embeddings prefer the backend gateway; env vars
-             // remain a dev convenience for the (separate) local embedding providers.
-             this.ragManager.initializeEmbeddings({
-                openaiKey: process.env.OPENAI_API_KEY || undefined,
-                geminiKey: process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || undefined,
-                ollamaUrl: process.env.OLLAMA_URL || "http://localhost:11434"
-             });
-          }
-        }
-      } catch (err) {
-         console.error('[AppState] Failed to bootstrap Ollama:', err);
-      }
-    })();
   }
 
   private initializeRAGManager(): void {
@@ -2627,9 +2589,6 @@ async function initializeApp() {
   // Apply the full disguise payload (names, dock icon, AUMID) early
   appState.applyInitialDisguise();
 
-  // Start the Ollama lifecycle manager
-  OllamaManager.getInstance().init().catch(console.error);
-
   // NOTE: CredentialsManager.init() and loadStoredCredentials() are already called
   // above before this block — do NOT call them again here to avoid double key-load.
 
@@ -2827,9 +2786,6 @@ async function initializeApp() {
     if (appState?.cropperWindowHelper) {
       appState.cropperWindowHelper.dispose();
     }
-
-    // Kill Ollama if we started it
-    OllamaManager.getInstance().stop();
 
     try {
       const { CredentialsManager } = require('./services/CredentialsManager');

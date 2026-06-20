@@ -175,8 +175,6 @@ interface ElectronAPI {
   onModelChanged: (callback: (modelId: string) => void) => () => void
 
   // Ollama
-  onOllamaPullProgress: (callback: (data: { status: string; percent: number }) => void) => () => void
-  onOllamaPullComplete: (callback: () => void) => () => void
 
   // Theme API
   getThemeMode: () => Promise<{ mode: 'system' | 'light' | 'dark', resolved: 'light' | 'dark' }>
@@ -882,21 +880,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
     }
   },
 
-  onOllamaPullProgress: (callback: (data: { status: string; percent: number }) => void) => {
-    const subscription = (_: any, data: any) => callback(data)
-    ipcRenderer.on('ollama:pull-progress', subscription)
-    return () => {
-      ipcRenderer.removeListener('ollama:pull-progress', subscription)
-    }
-  },
-
-  onOllamaPullComplete: (callback: () => void) => {
-    const subscription = () => callback()
-    ipcRenderer.on('ollama:pull-complete', subscription)
-    return () => {
-      ipcRenderer.removeListener('ollama:pull-complete', subscription)
-    }
-  },
 
   // Theme API
   getThemeMode: () => ipcRenderer.invoke('theme:get-mode'),

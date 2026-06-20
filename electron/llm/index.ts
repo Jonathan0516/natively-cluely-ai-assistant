@@ -31,7 +31,7 @@ export {
 } from "./IntentClassifier";
 export type { ConversationIntent, IntentResult } from "./IntentClassifier";
 export { MODE_CONFIGS } from "./types";
-export type { GenerationConfig, GeminiContent, LLMClient } from "./types";
+export type { GenerationConfig, GeminiContent } from "./types";
 export {
     HARD_SYSTEM_PROMPT,
     ANSWER_MODE_PROMPT,
