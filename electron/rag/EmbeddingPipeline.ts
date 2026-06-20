@@ -8,7 +8,7 @@
 // VectorStore and embedded here, then appended to the cloud.
 
 import { VectorStore } from './VectorStore';
-import { EmbeddingProviderResolver, AppAPIConfig } from './EmbeddingProviderResolver';
+import { EmbeddingProviderResolver } from './EmbeddingProviderResolver';
 import { IEmbeddingProvider } from './providers/IEmbeddingProvider';
 import { LocalEmbeddingProvider } from './providers/LocalEmbeddingProvider';
 
@@ -25,32 +25,21 @@ export class EmbeddingPipeline {
     private pending = new Set<string>();
     private isProcessing = false;
     private initPromise: Promise<void> | null = null;
-    private _lastConfig: AppAPIConfig | null = null;
 
     constructor(vectorStore: VectorStore) {
         this.vectorStore = vectorStore;
     }
 
-    async initialize(config: AppAPIConfig): Promise<void> {
-        if (this._lastConfig && !this._isConfigImprovement(this._lastConfig, config)) {
-            return this.initPromise ?? Promise.resolve();
-        }
-        this._lastConfig = { ...config };
-        console.log('[EmbeddingPipeline] Initializing with config:', config);
-        this.initPromise = this._doInitialize(config);
+    // Cloud-only: the embedding provider (cloud gateway → bundled local fallback) is
+    // resolved without any per-user keys. Idempotent — resolves once.
+    async initialize(): Promise<void> {
+        if (this.initPromise) return this.initPromise;
+        console.log('[EmbeddingPipeline] Initializing embedding provider…');
+        this.initPromise = this._doInitialize();
         return this.initPromise;
     }
 
-    private _isConfigImprovement(prev: AppAPIConfig, next: AppAPIConfig): boolean {
-        const hasNew = (p?: string, n?: string) => !p && !!n;
-        return (
-            hasNew(prev.openaiKey, next.openaiKey) ||
-            hasNew(prev.geminiKey, next.geminiKey) ||
-            hasNew(prev.ollamaUrl, next.ollamaUrl)
-        );
-    }
-
-    private async _doInitialize(config: AppAPIConfig): Promise<void> {
+    private async _doInitialize(): Promise<void> {
         // Local fallback first, so it's always available even if the primary throws.
         try {
             const local = new LocalEmbeddingProvider();
@@ -65,7 +54,7 @@ export class EmbeddingPipeline {
         }
 
         try {
-            this.provider = await EmbeddingProviderResolver.resolve(config);
+            this.provider = await EmbeddingProviderResolver.resolve();
             console.log(`[EmbeddingPipeline] Ready with provider: ${this.provider.name} (${this.provider.dimensions}d)`);
             if (this.provider instanceof LocalEmbeddingProvider) {
                 this.fallbackProvider = this.provider;

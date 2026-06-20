@@ -11,12 +11,6 @@ import { RAGRetriever } from './RAGRetriever';
 import { LiveRAGIndexer } from './LiveRAGIndexer';
 import { buildRAGPrompt, NO_CONTEXT_FALLBACK, NO_GLOBAL_CONTEXT_FALLBACK } from './prompts';
 
-export interface RAGManagerConfig {
-    openaiKey?: string;
-    geminiKey?: string;
-    ollamaUrl?: string;
-}
-
 /**
  * RAGManager - Central orchestrator for RAG operations
  * 
@@ -34,17 +28,13 @@ export class RAGManager {
     /** Guards against concurrent reprocessMeeting() calls for the same meeting ID. */
     private _reprocessInFlight = new Set<string>();
 
-    constructor(config: RAGManagerConfig) {
+    constructor() {
         this.vectorStore = new VectorStore();
         this.embeddingPipeline = new EmbeddingPipeline(this.vectorStore);
         this.retriever = new RAGRetriever(this.vectorStore, this.embeddingPipeline);
         this.liveIndexer = new LiveRAGIndexer(this.vectorStore, this.embeddingPipeline);
 
-        this.embeddingPipeline.initialize({
-            openaiKey: config.openaiKey,
-            geminiKey: config.geminiKey,
-            ollamaUrl: config.ollamaUrl
-        }).catch(() => { /* non-critical, suppress */ });
+        this.embeddingPipeline.initialize().catch(() => { /* non-critical, suppress */ });
     }
 
     /**
@@ -58,8 +48,8 @@ export class RAGManager {
         return this.embeddingPipeline;
     }
 
-    initializeEmbeddings(keys: { openaiKey?: string, geminiKey?: string, ollamaUrl?: string }): void {
-        const initPromise = this.embeddingPipeline.initialize(keys);
+    initializeEmbeddings(): void {
+        const initPromise = this.embeddingPipeline.initialize();
         // After init, backfill embedding_provider on meetings that have embedded chunks
         // but a NULL metadata column (common for meetings embedded before this metadata
         // write was introduced, or where the write silently failed).

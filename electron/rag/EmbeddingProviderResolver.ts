@@ -2,19 +2,13 @@ import { IEmbeddingProvider } from './providers/IEmbeddingProvider';
 import { CloudEmbeddingProvider } from './providers/CloudEmbeddingProvider';
 import { LocalEmbeddingProvider } from './providers/LocalEmbeddingProvider';
 
-export interface AppAPIConfig {
-  openaiKey?: string;
-  geminiKey?: string;
-  ollamaUrl?: string;
-}
-
 export class EmbeddingProviderResolver {
   /**
    * Returns the best available provider.
    * Cloud (backend gateway, platform Gemini key) is preferred when authenticated.
    * Local bundled model is the unconditional offline fallback — always last.
    */
-  static async resolve(_config: AppAPIConfig): Promise<IEmbeddingProvider> {
+  static async resolve(): Promise<IEmbeddingProvider> {
     const candidates: IEmbeddingProvider[] = [
       new CloudEmbeddingProvider(),
       new LocalEmbeddingProvider(), // offline fallback, always works

@@ -43,7 +43,7 @@ export class ProcessingHelper {
     const ragManager = this.appState.getRAGManager();
     if (ragManager) {
       console.log("[ProcessingHelper] Initializing RAGManager embeddings (cloud gateway preferred)");
-      ragManager.initializeEmbeddings({});
+      ragManager.initializeEmbeddings();
 
       // Retry pending embeddings + housekeeping now that the pipeline is ready.
       ragManager.retryPendingEmbeddings().catch(console.error);

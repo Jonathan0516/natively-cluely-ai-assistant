@@ -520,16 +520,9 @@ export class AppState {
       const sqliteDb = db.getDb();
 
       if (sqliteDb) {
-        // Cloud-only for LLM keys: embeddings prefer the backend gateway; env vars
-        // remain a dev convenience for the (separate) local embedding providers.
-        const openaiKey = process.env.OPENAI_API_KEY;
-        const geminiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
-
-        this.ragManager = new RAGManager({
-            openaiKey,
-            geminiKey,
-            ollamaUrl: process.env.OLLAMA_URL || 'http://localhost:11434'
-        });
+        // Cloud-only: embeddings resolve to the backend gateway (platform key) with a
+        // bundled local fallback — no per-user keys.
+        this.ragManager = new RAGManager();
         this.ragManager.setLLMHelper(this.processingHelper.getLLMHelper());
         console.log('[AppState] RAGManager initialized');
       }
