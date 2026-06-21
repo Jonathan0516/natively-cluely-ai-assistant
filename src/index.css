@@ -274,6 +274,42 @@ body {
   background: transparent;
 }
 
+/* Opt-in thin scrollbar for scrollable overlay panels. The rule above hides scrollbars
+   app-wide; this class restores a minimal, theme-aware one so users can tell there's more
+   content below the fold (e.g. the model picker, chat/profile/meeting overlays). The
+   `.custom-scrollbar` selector outranks the bare `::-webkit-scrollbar` rule on specificity,
+   so width:0 no longer wins here. */
+.custom-scrollbar {
+  scrollbar-width: thin;                                   /* Firefox */
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;  /* thumb track */
+}
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 9999px;
+  border: 2px solid transparent;     /* inset the thumb so it reads as a thin pill */
+  background-clip: padding-box;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.38);
+  background-clip: padding-box;
+}
+[data-theme='light'] .custom-scrollbar {
+  scrollbar-color: rgba(0, 0, 0, 0.25) transparent;
+}
+[data-theme='light'] .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.22);
+  background-clip: padding-box;
+}
+[data-theme='light'] .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.4);
+  background-clip: padding-box;
+}
+
 /* Liquid Glass Effect Base - Refined Matte Look */
 /* Used for floating elements on top of the vibrant background */
 .liquid-glass {

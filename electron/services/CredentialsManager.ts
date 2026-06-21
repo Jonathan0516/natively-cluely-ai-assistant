@@ -81,7 +81,7 @@ export class CredentialsManager {
     public getDefaultModel(): string {
         // Cloud-only: default is the gateway's fast tier (catalog id). Falls back here only
         // when the user hasn't picked a model.
-        return this.credentials.defaultModel || 'answer-fast';
+        return this.credentials.defaultModel || 'gemini-2.5-flash-lite';
     }
 
     public getAllCredentials(): StoredCredentials {

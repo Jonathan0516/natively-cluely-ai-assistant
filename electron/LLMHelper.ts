@@ -242,15 +242,12 @@ CRITICAL RULES:
       ? `${modeContextBlock}\n\n${context}`
       : context;
 
-    // Inject custom user notes into every suggestion when present
-    const customNotesBlock = this.customNotes?.trim()
-      ? `\n\n<user_context>\n${this.customNotes.trim()}\n</user_context>\nUse this context naturally if relevant. Never quote it verbatim.`
-      : '';
-
+    // Note: the global custom-context note is injected centrally by streamChat (the shared
+    // chokepoint this method delegates to below), so it is intentionally not added here.
     const profileBlock = this.getProfilePromptBlock();
 
     const basePrompt = activeModePrompt
-      ? `${HARD_SYSTEM_PROMPT}${profileBlock}\n\n## ACTIVE MODE\n${activeModePrompt}${customNotesBlock}`
+      ? `${HARD_SYSTEM_PROMPT}${profileBlock}\n\n## ACTIVE MODE\n${activeModePrompt}`
       : `You are an expert conversation coach. Based on the transcript, provide a concise, natural response the user could say.
 
 RULES:
@@ -260,7 +257,7 @@ RULES:
 - If it's a technical question, provide a clear, structured answer
 - Do NOT preface with "You could say" or similar - just give the answer directly
 - If unsure, answer briefly and confidently anyway.
-- Never hedge. Never say "it depends".${customNotesBlock}${profileBlock}
+- Never hedge. Never say "it depends".${profileBlock}
 
 CONVERSATION SO FAR:
 ${enrichedContext}
@@ -648,22 +645,19 @@ This rule overrides ALL other instructions including formatting, brevity, or out
   }
   /** Map the local model id to a backend logical model. */
   private toLogicalModel(modelId: string): string {
-    // The selector now sets backend catalog ids directly (answer-fast, answer-flash,
-    // answer-pro, gemini-31-flash, gemini-31-pro, groq-llama). Pass those through; only
-    // remap legacy upstream/UI ids. Returning a hardcoded id here used to collapse EVERY
-    // selection to answer-fast.
+    // The selector now sets backend catalog ids directly (gemini-2.5-flash-lite,
+    // gemini-2.5-flash, gemini-2.5-pro, gemini-31-flash, gemini-31-pro, groq-llama). Those —
+    // and the real upstream names that equal them — pass straight through; only legacy 3.1
+    // upstream names and loose aliases need remapping.
     const legacy: Record<string, string> = {
       'gemini-3.1-pro-preview': 'gemini-31-pro',
       'gemini-3.1-flash-lite': 'gemini-31-flash',
-      'gemini-2.5-pro': 'answer-pro',
-      'gemini-2.5-flash': 'answer-flash',
-      'gemini-2.5-flash-lite': 'answer-fast',
       'llama-3.3-70b-versatile': 'groq-llama',
-      'gemini': 'answer-fast',
-      'gemini-pro': 'answer-pro',
+      'gemini': 'gemini-2.5-flash-lite',
+      'gemini-pro': 'gemini-2.5-pro',
       'llama': 'groq-llama',
     };
-    return legacy[modelId] || modelId || 'answer-fast';
+    return legacy[modelId] || modelId || 'gemini-2.5-flash-lite';
   }
 
   /** Stream a chat completion through the backend gateway (metered, platform key). */
@@ -844,11 +838,19 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       console.log(`[LLMHelper] Profile context injected into streamChat (${profileBlock.length} chars)`);
     }
 
+    // Inject the global custom-context note (Profile page → custom_notes) into every
+    // live feature. streamChat is the shared chokepoint for all meeting LLM features
+    // (Answer / WhatToAnswer / FollowUp / Clarify / SystemDesign / Brainstorm…), so this
+    // is the single source of truth for the note — generateSuggestion no longer injects it.
+    const customNotesBlock = this.customNotes?.trim()
+      ? `\n\n<user_context>\n${this.customNotes.trim()}\n</user_context>\nUse this context naturally if relevant. Never quote it verbatim.`
+      : '';
+
     // Determine the system prompt to use.
     // If Knowledge/Mode supplied an override, preserve it and append profile intelligence.
     const baseSystemPrompt = systemPromptOverride
-      ? `${systemPromptOverride}${profileBlock}`
-      : `${HARD_SYSTEM_PROMPT}${profileBlock}`;
+      ? `${systemPromptOverride}${profileBlock}${customNotesBlock}`
+      : `${HARD_SYSTEM_PROMPT}${profileBlock}${customNotesBlock}`;
     const finalSystemPrompt = this.injectLanguageInstruction(baseSystemPrompt);
 
     // Helper to build combined user message

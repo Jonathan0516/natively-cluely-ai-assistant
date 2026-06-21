@@ -1,16 +1,18 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2, AlertCircle, RefreshCw, Search, Download, ArrowLeft } from 'lucide-react';
+
+import ModelLibraryModal from './ModelLibraryModal';
 
 // Cloud-only Plan & Usage building blocks for the account page (AccountView).
 // The desktop app no longer stores LLM/STT provider keys — every request is metered through
 // the backend gateway. `UsageCreditCard` surfaces the user's credit quota (from /llm/quota,
 // fetched by AccountView and passed in). `ModelUsageTable` shows per-model usage.
 //
-// NOTE: the action buttons (Add funds / Billing / Fund Agents), the "Pay as you go" badge,
-// the Agent Arena footer, and the whole Model Usage table are hardcoded placeholders — there
-// is no backend endpoint for per-model usage yet (the raw data exists per-model in
-// usage_events; see backend usage_repo.py). Wire them to a real /llm/usage endpoint later.
+// NOTE: the Add funds / Billing buttons and the "Pay as you go" badge are hardcoded
+// placeholders. The "Model Library" button IS wired — it opens ModelLibraryModal, which
+// pulls live model pricing/blurbs from /llm/models. The per-meeting usage table below is
+// real (fed by /llm/usage). Wire Add funds / Billing to billing endpoints later.
 
 export interface Quota {
     plan: string;
@@ -71,15 +73,12 @@ const fmtDate = (iso: string): string => {
 /** Top-right card of the account page: remaining credit + cycle meter + actions. */
 export const UsageCreditCard: React.FC<UsageCreditCardProps> = ({ quota, loading, error, onReload }) => {
     const { t } = useTranslation();
+    const [libraryOpen, setLibraryOpen] = useState(false);
 
     const pct = quota && quota.credits_total > 0
         ? Math.min(100, Math.round((quota.credits_used / quota.credits_total) * 100))
         : 0;
     const near = pct >= 90;
-
-    // Footer carries an inline accent link token delimited by "|" so the highlighted
-    // "Agent Arena" segment sits in the right place for both en and zh word order.
-    const [footPre, footLink, footPost] = t('account.planUsage.agentArenaFooter').split('|');
 
     return (
         <section className="rounded-2xl border border-border-subtle bg-bg-card shadow-sm p-6 flex flex-col">
@@ -156,16 +155,14 @@ export const UsageCreditCard: React.FC<UsageCreditCardProps> = ({ quota, loading
                         <button type="button" className="text-[13px] font-semibold rounded-xl px-4 py-2.5 border border-border-muted text-text-primary hover:border-text-tertiary transition-colors">
                             {t('account.planUsage.billing')}
                         </button>
-                        <button type="button" className="text-[13px] font-semibold rounded-xl px-4 py-2.5 border border-border-muted text-text-primary hover:border-text-tertiary transition-colors">
-                            {t('account.planUsage.fundAgents')}
+                        <button
+                            type="button"
+                            onClick={() => setLibraryOpen(true)}
+                            className="text-[13px] font-semibold rounded-xl px-4 py-2.5 border border-border-muted text-text-primary hover:border-text-tertiary transition-colors"
+                        >
+                            {t('account.planUsage.modelLibrary')}
                         </button>
                     </div>
-
-                    <p className="mt-3 text-[12px] text-text-secondary">
-                        {footPre}
-                        <span className="text-accent-primary font-semibold">{footLink}</span>
-                        {footPost}
-                    </p>
 
                     {near && (
                         <div className="flex items-center gap-1.5 text-[11px] text-amber-500 mt-2">
@@ -175,6 +172,8 @@ export const UsageCreditCard: React.FC<UsageCreditCardProps> = ({ quota, loading
                     )}
                 </>
             )}
+
+            <ModelLibraryModal open={libraryOpen} onClose={() => setLibraryOpen(false)} />
         </section>
     );
 };

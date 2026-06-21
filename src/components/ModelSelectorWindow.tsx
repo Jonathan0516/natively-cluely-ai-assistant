@@ -97,7 +97,7 @@ const ModelSelectorWindow = () => {
                         <span className="text-xs">{t('modelSelectorWindow.loadingModels')}</span>
                     </div>
                 ) : (
-                    <div className="flex-1 overflow-y-auto scrollbar-hide flex flex-col gap-0.5">
+                    <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-0.5 pr-0.5">
                         {availableModels.length === 0 ? (
                             <div className={`px-4 py-3 text-center text-xs ${isLight ? 'text-slate-400' : 'text-slate-500'}`}>
                                 {t('modelSelectorWindow.noModelsLine1')}<br />{t('modelSelectorWindow.noModelsLine2')}

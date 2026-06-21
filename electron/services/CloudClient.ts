@@ -337,6 +337,8 @@ export class CloudClient {
       capabilities: string[]
       available: boolean
       latency_hint?: string
+      price_in?: number
+      price_out?: number
     }>>(`/llm/models`)
   }
 

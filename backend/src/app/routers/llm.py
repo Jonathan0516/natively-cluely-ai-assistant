@@ -177,6 +177,12 @@ async def llm_models(
             "capabilities": list(s.capabilities),
             "available": s.tier in allowed,
             "latency_hint": s.latency_hint,
+            # Credits per 1k tokens — surfaced for the account page's Model Library.
+            "price_in": s.credits_per_1k_input,
+            "price_out": s.credits_per_1k_output,
+            # Drives the client's adaptive thinking toggle: "graded" (off/low/high),
+            # "binary" (on/off), or "none" (hide the button).
+            "reasoning": s.reasoning_style,
         }
         for s in CATALOG.values()
         if "text" in s.capabilities

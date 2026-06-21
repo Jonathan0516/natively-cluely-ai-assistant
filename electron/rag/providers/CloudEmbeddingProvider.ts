@@ -8,7 +8,7 @@ import { CloudClient } from '../../services/CloudClient';
  */
 export class CloudEmbeddingProvider implements IEmbeddingProvider {
   readonly name = 'cloud';
-  readonly dimensions = 768; // text-embedding-004 @ 768d
+  readonly dimensions = 768; // backend embed-default = gemini-embedding-001 @ 768d
 
   async isAvailable(): Promise<boolean> {
     try {

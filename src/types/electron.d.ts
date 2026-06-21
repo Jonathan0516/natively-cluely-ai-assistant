@@ -49,7 +49,7 @@ export interface ElectronAPI {
   hideOverlay: () => Promise<void>
   getMeetingActive: () => Promise<boolean>
   getLlmQuota: () => Promise<{ plan: string; period_start: string; period_end: string; credits_total: number; credits_used: number; credits_remaining: number }>
-  getLlmModels: () => Promise<Array<{ id: string; label: string; tier: string; capabilities: string[]; available: boolean; latency_hint?: string }>>
+  getLlmModels: () => Promise<Array<{ id: string; label: string; tier: string; capabilities: string[]; available: boolean; latency_hint?: string; reasoning?: 'graded' | 'binary' | 'none'; price_in?: number; price_out?: number }>>
   getLlmUsage: () => Promise<Array<{ meeting_id: string; last_used: string; input_tokens: number; output_tokens: number; credits: number; models: Array<{ model: string; label: string; input_tokens: number; output_tokens: number; credits: number; rate_input: number; rate_output: number }> }>>
   getMeetingUsage: (meetingId: string) => Promise<{ meeting_id: string; input_tokens: number; output_tokens: number; credits: number; turns: Array<{ turn_id: string | null; calls: number; input_tokens: number; output_tokens: number; credits: number; models: Array<{ model: string; label: string; input_tokens: number; output_tokens: number; credits: number; rate_input: number; rate_output: number }> }> }>
   onMeetingStateChanged: (callback: (data: { isActive: boolean }) => void) => () => void

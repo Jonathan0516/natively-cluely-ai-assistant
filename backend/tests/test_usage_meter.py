@@ -21,9 +21,9 @@ def test_quota_remaining_and_exhausted():
 
 async def test_record_and_sum_credits_in_period():
     repo = InMemoryUsageRepo()
-    await repo.record_event("u1", kind="json", model="answer-pro",
+    await repo.record_event("u1", kind="json", model="gemini-2.5-pro",
                             input_tokens=1000, output_tokens=1000, credits=20)
-    await repo.record_event("u1", kind="chat", model="answer-pro",
+    await repo.record_event("u1", kind="chat", model="gemini-2.5-pro",
                             input_tokens=500, output_tokens=500, credits=10)
     used = await repo.credits_used_since("u1", since="1970-01-01T00:00:00+00:00")
     assert used == 30
@@ -46,7 +46,7 @@ async def test_set_and_get_plan():
 async def test_status_reflects_recorded_usage():
     repo = InMemoryUsageRepo()
     meter = UsageMeter(repo, CATALOG, PLANS)
-    spec = CATALOG["answer-fast"]
+    spec = CATALOG["gemini-2.5-flash-lite"]
     await meter.record(
         "u1", kind="json", spec=spec, usage=Usage(input_tokens=1000, output_tokens=1000)
     )
@@ -60,7 +60,7 @@ async def test_check_raises_when_exhausted():
     repo = InMemoryUsageRepo()
     meter = UsageMeter(repo, CATALOG, PLANS)
     # Free plan = 1000 credits. Burn it all via one big event.
-    spec = CATALOG["answer-fast"]
+    spec = CATALOG["gemini-2.5-flash-lite"]
     await repo.record_event("u1", kind="json", model=spec.id,
                             input_tokens=0, output_tokens=500_000, credits=1000)
     with pytest.raises(QuotaExceeded):
@@ -98,13 +98,13 @@ async def test_meeting_usage_groups_by_meeting_and_model():
     meter = UsageMeter(repo, CATALOG, PLANS)
     # Two models used in meeting m1 (a mid-meeting switch), one model in m2,
     # and one event with no meeting (must be excluded).
-    await repo.record_event("u1", kind="chat", model="answer-pro",
+    await repo.record_event("u1", kind="chat", model="gemini-2.5-pro",
                             input_tokens=1000, output_tokens=1000, credits=20, meeting_id="m1")
-    await repo.record_event("u1", kind="chat", model="answer-fast",
+    await repo.record_event("u1", kind="chat", model="gemini-2.5-flash-lite",
                             input_tokens=500, output_tokens=500, credits=2, meeting_id="m1")
-    await repo.record_event("u1", kind="chat", model="answer-fast",
+    await repo.record_event("u1", kind="chat", model="gemini-2.5-flash-lite",
                             input_tokens=300, output_tokens=100, credits=1, meeting_id="m2")
-    await repo.record_event("u1", kind="chat", model="answer-fast",
+    await repo.record_event("u1", kind="chat", model="gemini-2.5-flash-lite",
                             input_tokens=100, output_tokens=0, credits=1)  # no meeting → excluded
 
     rows = await meter.meeting_usage("u1")
@@ -115,11 +115,11 @@ async def test_meeting_usage_groups_by_meeting_and_model():
     assert m1["input_tokens"] == 1500
     assert m1["output_tokens"] == 1500
     assert m1["credits"] == 22
-    assert {m["model"] for m in m1["models"]} == {"answer-pro", "answer-fast"}
-    pro = next(m for m in m1["models"] if m["model"] == "answer-pro")
+    assert {m["model"] for m in m1["models"]} == {"gemini-2.5-pro", "gemini-2.5-flash-lite"}
+    pro = next(m for m in m1["models"] if m["model"] == "gemini-2.5-pro")
     assert pro["credits"] == 20
-    assert pro["rate_input"] == CATALOG["answer-pro"].credits_per_1k_input
-    assert pro["rate_output"] == CATALOG["answer-pro"].credits_per_1k_output
+    assert pro["rate_input"] == CATALOG["gemini-2.5-pro"].credits_per_1k_input
+    assert pro["rate_output"] == CATALOG["gemini-2.5-pro"].credits_per_1k_output
 
     assert by_id["m2"]["credits"] == 1
 
@@ -128,16 +128,16 @@ async def test_meeting_turn_usage_groups_by_turn():
     repo = InMemoryUsageRepo()
     meter = UsageMeter(repo, CATALOG, PLANS)
     # Turn t1 spans two calls (intent + answer); turn t2 one call; one untied call (no turn).
-    await repo.record_event("u1", kind="json", model="answer-fast",
+    await repo.record_event("u1", kind="json", model="gemini-2.5-flash-lite",
                             input_tokens=300, output_tokens=20, credits=1,
                             meeting_id="m1", turn_id="t1")
-    await repo.record_event("u1", kind="chat", model="answer-fast",
+    await repo.record_event("u1", kind="chat", model="gemini-2.5-flash-lite",
                             input_tokens=5000, output_tokens=400, credits=3,
                             meeting_id="m1", turn_id="t1")
-    await repo.record_event("u1", kind="chat", model="answer-pro",
+    await repo.record_event("u1", kind="chat", model="gemini-2.5-pro",
                             input_tokens=1000, output_tokens=1000, credits=20,
                             meeting_id="m1", turn_id="t2")
-    await repo.record_event("u1", kind="chat", model="answer-fast",
+    await repo.record_event("u1", kind="chat", model="gemini-2.5-flash-lite",
                             input_tokens=200, output_tokens=10, credits=1,
                             meeting_id="m1")  # no turn → system bucket
 
@@ -150,6 +150,6 @@ async def test_meeting_turn_usage_groups_by_turn():
     assert by_turn["t1"]["input_tokens"] == 5300
     assert by_turn["t1"]["credits"] == 4
     assert by_turn["t2"]["credits"] == 20
-    assert by_turn["t2"]["models"][0]["rate_output"] == CATALOG["answer-pro"].credits_per_1k_output
+    assert by_turn["t2"]["models"][0]["rate_output"] == CATALOG["gemini-2.5-pro"].credits_per_1k_output
     assert None in by_turn                  # untied calls bucketed under null turn
     assert by_turn[None]["credits"] == 1

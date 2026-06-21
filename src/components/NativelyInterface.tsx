@@ -154,20 +154,33 @@ const NativelyInterface: React.FC<NativelyInterfaceProps> = ({ onEndMeeting, ove
     }, []);
 
     // Model Selection State. currentModel is always a catalog id from the live model list
-    // (answer-fast/answer-flash/answer-pro) so it stays in sync with — and reselectable in —
-    // the dropdown. availableModels backs the toolbar label lookup.
+    // (gemini-2.5-flash-lite/gemini-2.5-flash/gemini-2.5-pro/…) so it stays in sync with —
+    // and reselectable in — the dropdown. availableModels backs the toolbar label lookup.
     const [currentModel, setCurrentModel] = useState<string>('');
-    const [availableModels, setAvailableModels] = useState<Array<{ id: string; label: string }>>([]);
+    type ReasoningStyle = 'graded' | 'binary' | 'none';
+    const [availableModels, setAvailableModels] = useState<Array<{ id: string; label: string; reasoning: ReasoningStyle }>>([]);
 
-    // Thinking budget (Gemini 3.x): 'none' = fastest first token, 'low'/'high' = more reasoning.
-    // Cycled by the toolbar button; sent to the gateway per request via LLMHelper.
+    // Thinking control. Stored as the gateway's generic vocabulary ('none'|'low'|'high');
+    // the backend translates it per model (graded → reasoning_effort, binary → thinking on/off).
+    // The toolbar button adapts to the *active* model's reasoning style (see below).
     const [reasoningEffort, setReasoningEffort] = useState<'none' | 'low' | 'high'>('none');
-    const cycleReasoningEffort = () => {
-        setReasoningEffort(prev => {
-            const next = prev === 'none' ? 'low' : prev === 'low' ? 'high' : 'none';
-            window.electronAPI?.setReasoningEffort?.(next);
-            return next;
-        });
+    const pushReasoningEffort = (next: 'none' | 'low' | 'high') => {
+        setReasoningEffort(next);
+        window.electronAPI?.setReasoningEffort?.(next);
+    };
+    // Reasoning style of the currently selected model — drives whether the button is a
+    // 3-state (graded), 2-state (binary), or hidden (none) control.
+    const activeReasoningStyle: ReasoningStyle =
+        availableModels.find(x => x.id === currentModel)?.reasoning ?? 'none';
+    const thinkingOn = reasoningEffort !== 'none';
+    const onThinkingClick = () => {
+        if (activeReasoningStyle === 'graded') {
+            // none → low → high → none
+            pushReasoningEffort(reasoningEffort === 'none' ? 'low' : reasoningEffort === 'low' ? 'high' : 'none');
+        } else if (activeReasoningStyle === 'binary') {
+            // off ⇄ on (any non-'none' value reads as "on" upstream; use 'high' for clarity)
+            pushReasoningEffort(thinkingOn ? 'none' : 'high');
+        }
     };
 
     // Dynamic Action Button Mode (Recap vs Brainstorm)
@@ -206,7 +219,9 @@ const NativelyInterface: React.FC<NativelyInterfaceProps> = ({ onEndMeeting, ove
         (async () => {
             try {
                 const models = (await window.electronAPI?.getLlmModels?.()) || [];
-                const avail = models.filter(m => m.available).map(m => ({ id: m.id, label: m.label }));
+                const avail = models.filter(m => m.available).map(m => ({
+                    id: m.id, label: m.label, reasoning: (m.reasoning ?? 'none') as ReasoningStyle,
+                }));
                 if (cancelled) return;
                 setAvailableModels(avail);
 
@@ -2433,9 +2448,6 @@ Provide only the answer, nothing else.`;
                                                     if (!m) return 'Model';
                                                     if (m.startsWith('ollama-')) return m.replace('ollama-', '');
                                                     // Logical gateway ids (what setModel now uses).
-                                                    if (m === 'answer-fast') return 'Gemini 2.5 Flash Lite';
-                                                    if (m === 'answer-flash') return 'Gemini 2.5 Flash';
-                                                    if (m === 'answer-pro') return 'Gemini 2.5 Pro';
                                                     if (m === 'gemini-2.5-flash-lite') return 'Gemini 2.5 Flash Lite';
                                                     if (m === 'gemini-2.5-flash') return 'Gemini 2.5 Flash';
                                                     if (m === 'gemini-2.5-pro') return 'Gemini 2.5 Pro';
@@ -2493,26 +2505,33 @@ Provide only the answer, nothing else.`;
 
 
 
-                                        {/* Thinking budget toggle (Gemini 3.x): off → low → high */}
+                                        {/* Thinking toggle — adapts to the active model's reasoning style:
+                                            graded (Gemini) cycles Off→Low→High; binary (Netmind DeepSeek/MiMo)
+                                            toggles Off⇄On; 'none' models (e.g. Groq) hide the button entirely. */}
+                                        {activeReasoningStyle !== 'none' && (
                                         <div className="relative">
                                             <button
-                                                onClick={cycleReasoningEffort}
-                                                title={`Thinking: ${reasoningEffort === 'none' ? 'Off (fastest)' : reasoningEffort === 'low' ? 'Low' : 'High'}`}
+                                                onClick={onThinkingClick}
+                                                title={activeReasoningStyle === 'graded'
+                                                    ? `Thinking: ${reasoningEffort === 'none' ? 'Off (fastest)' : reasoningEffort === 'low' ? 'Low' : 'High'}`
+                                                    : `Thinking: ${thinkingOn ? 'On' : 'Off (fastest)'}`}
                                                 className={`
                                                     w-7 h-7 flex items-center justify-center rounded-lg
                                                     interaction-base interaction-press
-                                                    ${reasoningEffort !== 'none'
+                                                    ${thinkingOn
                                                         ? 'overlay-icon-surface overlay-icon-surface-hover text-violet-400 opacity-100'
                                                         : 'overlay-icon-surface overlay-icon-surface-hover overlay-text-interactive'}
                                                 `}
                                                 style={appearance.iconStyle}
                                             >
                                                 <Brain className={`w-3.5 h-3.5 ${reasoningEffort === 'high' ? 'opacity-100' : reasoningEffort === 'low' ? 'opacity-80' : ''}`} />
+                                                {/* graded "high" gets a dot; binary "on" maps to 'high' so it shows too */}
                                                 {reasoningEffort === 'high' && (
                                                     <span className="absolute bottom-0.5 right-0.5 w-1 h-1 rounded-full bg-violet-400" />
                                                 )}
                                             </button>
                                         </div>
+                                        )}
 
                                         {/* Mouse Passthrough Toggle */}
                                         <div className="relative">

@@ -863,7 +863,7 @@ export function initializeIpcHandlers(appState: AppState): void {
       return { model: cm.getDefaultModel() };
     } catch (error: any) {
       console.error("Error getting default model:", error);
-      return { model: 'answer-fast' };
+      return { model: 'gemini-2.5-flash-lite' };
     }
   });
 

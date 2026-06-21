@@ -17,7 +17,7 @@ def _collect_sse(raw: str) -> tuple[str, bool]:
 
 async def test_chat_streams_text_and_records_usage(client, usage_repo):
     with client.stream("POST", "/llm/chat", json={
-        "model": "answer-fast",
+        "model": "gemini-2.5-flash-lite",
         "messages": [{"role": "user", "content": "hi"}],
     }) as resp:
         assert resp.status_code == 200
@@ -37,9 +37,13 @@ def test_chat_unknown_model_400(client):
     assert resp.status_code == 400
 
 
-def test_chat_403_when_model_tier_not_in_plan(client):
-    resp = client.post("/llm/chat", json={
-        "model": "answer-pro", "messages": [{"role": "user", "content": "hi"}],
-    })
-    assert resp.status_code == 403
-    assert resp.json()["detail"]["error"] == "tier_not_allowed"
+def test_chat_pro_model_allowed_on_free_plan(client):
+    # Both tiers are unlocked on every plan now — a pro-tier model streams without a 403.
+    with client.stream("POST", "/llm/chat", json={
+        "model": "gemini-2.5-pro", "messages": [{"role": "user", "content": "hi"}],
+    }) as resp:
+        assert resp.status_code == 200
+        body = "".join(resp.iter_text())
+    text, done = _collect_sse(body)
+    assert text == "Hello world"
+    assert done is True

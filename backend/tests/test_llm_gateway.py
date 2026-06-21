@@ -37,8 +37,8 @@ class _FailProvider:
 
 def test_resolve_returns_spec_and_provider():
     gw = LLMGateway(CATALOG, {"openai_compat": _OkProvider()})
-    spec, prov = gw.resolve("answer-pro")
-    assert spec.id == "answer-pro"
+    spec, prov = gw.resolve("gemini-2.5-pro")
+    assert spec.id == "gemini-2.5-pro"
     assert prov.name == "openai_compat"
 
 
@@ -50,26 +50,26 @@ def test_resolve_unknown_model_raises():
 
 async def test_generate_json_returns_spec_used():
     gw = LLMGateway(CATALOG, {"openai_compat": _OkProvider()})
-    spec, res = await gw.generate_json("answer-pro", [ChatMessage("user", "hi")], {})
-    assert spec.id == "answer-pro"
+    spec, res = await gw.generate_json("gemini-2.5-pro", [ChatMessage("user", "hi")], {})
+    assert spec.id == "gemini-2.5-pro"
     assert res.text == "{}"
 
 
 async def test_generate_json_falls_back_on_failure():
-    # answer-pro fails → its fallback answer-netmind (same provider key) is tried.
+    # gemini-2.5-pro fails and has no fallback chain → the gateway surfaces NoModelAvailable.
     gw = LLMGateway(CATALOG, {"openai_compat": _FailProvider()})
     with pytest.raises(NoModelAvailable):
-        await gw.generate_json("answer-pro", [ChatMessage("user", "hi")], {})
+        await gw.generate_json("gemini-2.5-pro", [ChatMessage("user", "hi")], {})
 
 
 async def test_stream_chat_yields_text():
     gw = LLMGateway(CATALOG, {"openai_compat": _OkProvider()})
     spec_holder = {}
     chunks = []
-    async for spec, delta in gw.stream_chat("answer-pro", [ChatMessage("user", "hi")], [], {}):
+    async for spec, delta in gw.stream_chat("gemini-2.5-pro", [ChatMessage("user", "hi")], [], {}):
         spec_holder["spec"] = spec
         chunks.append(delta)
-    assert spec_holder["spec"].id == "answer-pro"
+    assert spec_holder["spec"].id == "gemini-2.5-pro"
     assert any(c.text == "hi" for c in chunks)
     assert any(c.usage for c in chunks)
 

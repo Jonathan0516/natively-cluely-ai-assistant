@@ -7,7 +7,7 @@ import logging
 from collections.abc import AsyncIterator
 
 from .llm_types import ChatDelta, ChatMessage, EmbedResult, GenResult, NoModelAvailable
-from .model_catalog import ModelSpec
+from .model_catalog import ModelSpec, apply_reasoning_param
 from .providers.base import Provider
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,8 @@ class LLMGateway:
             try:
                 spec, prov = self.resolve(mid)
                 res = await prov.generate_json(
-                    spec.upstream_model, messages, {**spec.extra_params, **params}
+                    spec.upstream_model, messages,
+                    apply_reasoning_param(spec, {**spec.extra_params, **params}),
                 )
                 return spec, res
             except Exception as exc:  # noqa: BLE001 — fallback is intentional
@@ -58,7 +59,8 @@ class LLMGateway:
             try:
                 spec, prov = self.resolve(mid)
                 stream = prov.stream_chat(
-                    spec.upstream_model, messages, images, {**spec.extra_params, **params}
+                    spec.upstream_model, messages, images,
+                    apply_reasoning_param(spec, {**spec.extra_params, **params}),
                 )
                 # peek the first item so a provider that fails immediately can still fall back
                 agen = stream.__aiter__()

@@ -1,0 +1,19 @@
+{
+  "pkg": "natively",
+  "globalName": "NativelyAccount",
+  "projectId": "50bba07c-63fa-4078-83cc-84b570689924",
+  "shape": "package",
+  "srcDir": "src",
+  "tsconfig": "tsconfig.json",
+  "componentSrcMap": {
+    "AccountView": "src/components/auth/AccountView.tsx",
+    "PlanUsagePanel": "src/components/auth/PlanUsagePanel.tsx"
+  },
+  "cssEntry": ".design-sync/.cache/compiled.css",
+  "guidelinesGlob": [],
+  "readmeHeader": ".design-sync/conventions.md",
+  "dtsPropsFor": {
+    "AccountView": "/** Masked phone string shown as the username. */\n  phone: string;\n  /** Invoked when the user clicks Sign out. */\n  onSignOut: () => void;",
+    "PlanUsagePanel": ""
+  }
+}
