@@ -96,7 +96,7 @@ interface ElectronAPI {
   startMeeting: (metadata?: any) => Promise<{ success: boolean; error?: string }>
   endMeeting: (opts?: { discard?: boolean }) => Promise<{ success: boolean; error?: string }>
   finalizeMicSTT: () => Promise<void>
-  getRecentMeetings: () => Promise<Array<{ id: string; title: string; date: string; duration: string; summary: string }>>
+  getRecentMeetings: (limit?: number) => Promise<Array<{ id: string; title: string; date: string; duration: string; summary: string }>>
   getMeetingDetails: (id: string) => Promise<any>
   updateMeetingTitle: (id: string, title: string) => Promise<boolean>
   updateMeetingSummary: (id: string, updates: { overview?: string, actionItems?: string[], keyPoints?: string[], actionItemsTitle?: string, keyPointsTitle?: string }) => Promise<boolean>
@@ -118,6 +118,7 @@ interface ElectronAPI {
   getDefaultModel: () => Promise<{ model: string }>
   setModel: (modelId: string) => Promise<{ success: boolean; error?: string }>
   setDefaultModel: (modelId: string) => Promise<{ success: boolean; error?: string }>
+  setReasoningEffort: (effort: string) => Promise<{ success: boolean; error?: string }>
   toggleModelSelector: (coords: { x: number; y: number }) => Promise<void>
 
   // Settings Window
@@ -149,7 +150,9 @@ interface ElectronAPI {
   hideOverlay: () => Promise<void>
   getMeetingActive: () => Promise<boolean>
   getLlmQuota: () => Promise<{ plan: string; period_start: string; period_end: string; credits_total: number; credits_used: number; credits_remaining: number }>
-  getLlmModels: () => Promise<Array<{ id: string; label: string; tier: string; capabilities: string[]; available: boolean }>>
+  getLlmModels: () => Promise<Array<{ id: string; label: string; tier: string; capabilities: string[]; available: boolean; latency_hint?: string }>>
+  getLlmUsage: () => Promise<Array<{ meeting_id: string; last_used: string; input_tokens: number; output_tokens: number; credits: number; models: Array<{ model: string; label: string; input_tokens: number; output_tokens: number; credits: number; rate_input: number; rate_output: number }> }>>
+  getMeetingUsage: (meetingId: string) => Promise<{ meeting_id: string; input_tokens: number; output_tokens: number; credits: number; turns: Array<{ turn_id: string | null; calls: number; input_tokens: number; output_tokens: number; credits: number; models: Array<{ model: string; label: string; input_tokens: number; output_tokens: number; credits: number; rate_input: number; rate_output: number }> }> }>
   onMeetingStateChanged: (callback: (data: { isActive: boolean }) => void) => () => void
   onQuotaExhausted: (callback: (data: { source: 'chat' | 'json' | 'stt'; message?: string }) => void) => () => void
   onWindowMaximizedChanged: (callback: (isMaximized: boolean) => void) => () => void
@@ -450,6 +453,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getMeetingActive: () => ipcRenderer.invoke("get-meeting-active"),
   getLlmQuota: () => ipcRenderer.invoke("get-llm-quota"),
   getLlmModels: () => ipcRenderer.invoke("get-llm-models"),
+  getLlmUsage: () => ipcRenderer.invoke("get-llm-usage"),
+  getMeetingUsage: (meetingId: string) => ipcRenderer.invoke("get-meeting-usage", meetingId),
   onMeetingStateChanged: (callback: (data: { isActive: boolean }) => void) => {
     const subscription = (_: any, data: { isActive: boolean }) => callback(data);
     ipcRenderer.on('meeting-state-changed', subscription);
@@ -649,7 +654,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   startMeeting: (metadata?: any) => ipcRenderer.invoke("start-meeting", metadata),
   endMeeting: (opts?: { discard?: boolean }) => ipcRenderer.invoke("end-meeting", opts),
   finalizeMicSTT: () => ipcRenderer.invoke("finalize-mic-stt"),
-  getRecentMeetings: () => ipcRenderer.invoke("get-recent-meetings"),
+  getRecentMeetings: (limit?: number) => ipcRenderer.invoke("get-recent-meetings", limit),
   getMeetingDetails: (id: string) => ipcRenderer.invoke("get-meeting-details", id),
   updateMeetingTitle: (id: string, title: string) => ipcRenderer.invoke("update-meeting-title", { id, title }),
   updateMeetingSummary: (id: string, updates: any) => ipcRenderer.invoke("update-meeting-summary", { id, updates }),
@@ -819,6 +824,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Model Management
   getDefaultModel: () => ipcRenderer.invoke('get-default-model'),
   setModel: (modelId: string) => ipcRenderer.invoke('set-model', modelId),
+  setReasoningEffort: (effort: string) => ipcRenderer.invoke('set-reasoning-effort', effort),
   setDefaultModel: (modelId: string) => ipcRenderer.invoke('set-default-model', modelId),
   toggleModelSelector: (coords: { x: number; y: number }) => ipcRenderer.invoke('toggle-model-selector', coords),
 

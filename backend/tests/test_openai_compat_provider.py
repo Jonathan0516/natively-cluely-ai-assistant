@@ -39,6 +39,36 @@ async def test_stream_chat_yields_deltas_and_usage():
     assert usage.input_tokens == 7 and usage.output_tokens == 2
 
 
+async def _capture_image_url(images: list[str]) -> str:
+    """Run stream_chat against a mock that records the request body, return the
+    image_url string the provider sent upstream."""
+    seen: dict = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(req.content)
+        return httpx.Response(200, content=_sse(["[DONE]"]),
+                              headers={"content-type": "text/event-stream"})
+
+    prov = OpenAICompatProvider(http=_make_client(handler), api_key="k", base_url="https://x/v1")
+    async for _ in prov.stream_chat("m", [ChatMessage("user", "hi")], images, {}):
+        pass
+    parts = seen["body"]["messages"][-1]["content"]
+    img = next(p for p in parts if p["type"] == "image_url")
+    return img["image_url"]["url"]
+
+
+async def test_stream_chat_passes_data_url_image_through():
+    # Client sends a full data URL (mime preserved) — must NOT be re-prefixed.
+    url = await _capture_image_url(["data:image/jpeg;base64,AAAA"])
+    assert url == "data:image/jpeg;base64,AAAA"
+
+
+async def test_stream_chat_wraps_raw_base64_image():
+    # Back-compat: a bare base64 string still gets the png data-URL prefix.
+    url = await _capture_image_url(["AAAA"])
+    assert url == "data:image/png;base64,AAAA"
+
+
 async def test_generate_json_returns_text_and_usage():
     def handler(req: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={

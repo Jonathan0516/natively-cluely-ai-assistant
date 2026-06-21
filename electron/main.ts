@@ -205,6 +205,7 @@ try {
 }
 
 import { CredentialsManager } from "./services/CredentialsManager"
+import { ActiveMeeting } from "./services/ActiveMeeting"
 import { SettingsManager } from "./services/SettingsManager"
 import { setVerboseLoggingFlag } from "./verboseLog"
 import { ReleaseNotesManager } from "./update/ReleaseNotesManager"
@@ -1423,6 +1424,10 @@ export class AppState {
     }
 
     this.isMeetingActive = true;
+    // Start a stable meeting id now so in-meeting LLM calls (live suggestions, Q&A) can be
+    // tagged with meeting_id for the per-meeting usage view. MeetingPersistence reuses this
+    // id as the saved meeting id and clears it once the meeting is fully persisted.
+    ActiveMeeting.start();
     this.broadcastMeetingState()
     if (metadata) {
       this.intelligenceManager.setMeetingMetadata(metadata);

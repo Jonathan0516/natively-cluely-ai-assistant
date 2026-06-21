@@ -7,6 +7,7 @@ import { LLMHelper } from './LLMHelper';
 import { DatabaseManager, Meeting } from './db/DatabaseManager';
 import { GROQ_TITLE_PROMPT, GROQ_SUMMARY_JSON_PROMPT } from './llm';
 import { TokenUsageTracker, mergeTokenUsageSnapshots } from './services/TokenUsageTracker';
+import { ActiveMeeting } from './services/ActiveMeeting';
 import { MeetingOutbox } from './services/MeetingOutbox';
 const crypto = require('crypto');
 
@@ -46,6 +47,7 @@ export class MeetingPersistence {
         if (durationMs < 1000) {
             console.log("Meeting too short, ignoring.");
             this.session.reset();
+            ActiveMeeting.clear();
             return null;
         }
 
@@ -67,10 +69,13 @@ export class MeetingPersistence {
         if (discard) {
             console.log('[MeetingPersistence] Meeting discarded before persistence.');
             TokenUsageTracker.reset();
+            ActiveMeeting.clear();
             return null;
         }
 
-        const meetingId = crypto.randomUUID();
+        // Reuse the id minted at meeting start (main.ts) so usage_events.meeting_id recorded
+        // during the meeting match this saved row. Fallback covers sessions not started via main.
+        const meetingId = ActiveMeeting.get() ?? crypto.randomUUID();
         this.processAndSaveMeeting(snapshot, meetingId, metadataSnapshot).catch(err => {
             console.error('[MeetingPersistence] Background processing failed:', err);
         });
@@ -299,6 +304,9 @@ Return ONLY valid JSON (no markdown code blocks):
 
             // Reset the global tracker now that this meeting's tokens are persisted.
             TokenUsageTracker.reset();
+            // Post-meeting summary/title calls (above) were attributed to this meeting; now
+            // that it is fully persisted, clear the ambient id so the next meeting starts fresh.
+            ActiveMeeting.clear();
 
             // Metadata was already snapshotted before session.reset() — nothing to clear here.
 

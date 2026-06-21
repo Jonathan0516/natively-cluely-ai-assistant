@@ -5,6 +5,7 @@
 import { RecapLLM } from './llm';
 import { isVerboseLogging } from './verboseLog';
 import { TokenUsageTracker, TokenUsageSnapshot } from './services/TokenUsageTracker';
+import { ActiveTurn } from './services/ActiveTurn';
 
 export interface TranscriptSegment {
     marker?: string;
@@ -533,13 +534,19 @@ export class SessionTracker {
             type,
             timestamp: Date.now(),
             question,
-            answer
+            answer,
+            turnId: ActiveTurn.peek(),
         });
+        ActiveTurn.end();
     }
 
     pushUsage(entry: any): void {
+        // Stamp the interaction with the turn its LLM calls used, then close the turn so the
+        // next Q&A mints a fresh turn_id. Lets the meeting-detail view attribute usage per Q&A.
+        if (entry && entry.turnId == null) entry.turnId = ActiveTurn.peek();
         this.fullUsage.push(entry);
         this.capUsageArray();
+        ActiveTurn.end();
     }
 
     // ============================================

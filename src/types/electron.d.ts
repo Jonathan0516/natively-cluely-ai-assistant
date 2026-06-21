@@ -49,7 +49,9 @@ export interface ElectronAPI {
   hideOverlay: () => Promise<void>
   getMeetingActive: () => Promise<boolean>
   getLlmQuota: () => Promise<{ plan: string; period_start: string; period_end: string; credits_total: number; credits_used: number; credits_remaining: number }>
-  getLlmModels: () => Promise<Array<{ id: string; label: string; tier: string; capabilities: string[]; available: boolean }>>
+  getLlmModels: () => Promise<Array<{ id: string; label: string; tier: string; capabilities: string[]; available: boolean; latency_hint?: string }>>
+  getLlmUsage: () => Promise<Array<{ meeting_id: string; last_used: string; input_tokens: number; output_tokens: number; credits: number; models: Array<{ model: string; label: string; input_tokens: number; output_tokens: number; credits: number; rate_input: number; rate_output: number }> }>>
+  getMeetingUsage: (meetingId: string) => Promise<{ meeting_id: string; input_tokens: number; output_tokens: number; credits: number; turns: Array<{ turn_id: string | null; calls: number; input_tokens: number; output_tokens: number; credits: number; models: Array<{ model: string; label: string; input_tokens: number; output_tokens: number; credits: number; rate_input: number; rate_output: number }> }> }>
   onMeetingStateChanged: (callback: (data: { isActive: boolean }) => void) => () => void
   onWindowMaximizedChanged: (callback: (isMaximized: boolean) => void) => () => void
   onEnsureExpanded: (callback: () => void) => () => void
@@ -154,7 +156,7 @@ export interface ElectronAPI {
   startMeeting: (metadata?: any) => Promise<{ success: boolean; error?: string }>
   endMeeting: (opts?: { discard?: boolean }) => Promise<{ success: boolean; error?: string }>
   finalizeMicSTT: () => Promise<void>
-  getRecentMeetings: () => Promise<Array<{ id: string; title: string; date: string; duration: string; summary: string }>>
+  getRecentMeetings: (limit?: number) => Promise<Array<{ id: string; title: string; date: string; duration: string; summary: string }>>
   getMeetingDetails: (id: string) => Promise<any>
   updateMeetingTitle: (id: string, title: string) => Promise<boolean>
   updateMeetingSummary: (id: string, updates: { overview?: string, actionItems?: string[], keyPoints?: string[], actionItemsTitle?: string, keyPointsTitle?: string }) => Promise<boolean>
@@ -189,6 +191,7 @@ export interface ElectronAPI {
   // Model Management
   getDefaultModel: () => Promise<{ model: string }>;
   setModel: (modelId: string) => Promise<{ success: boolean; error?: string }>;
+  setReasoningEffort: (effort: string) => Promise<{ success: boolean; error?: string }>;
   setDefaultModel: (modelId: string) => Promise<{ success: boolean; error?: string }>;
   toggleModelSelector: (coords: { x: number; y: number }) => Promise<void>;
 

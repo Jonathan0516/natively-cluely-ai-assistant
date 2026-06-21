@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useResolvedTheme } from '../hooks/useResolvedTheme';
 import { ArrowLeft, Search, Mail, Link, ChevronDown, Play, ArrowUp, Copy, Check, MoreHorizontal, Settings, ArrowRight, X } from 'lucide-react';
@@ -54,6 +54,7 @@ interface Meeting {
         question?: string;
         answer?: string;
         items?: string[];
+        turnId?: string;
     }>;
     tokenUsage?: {
         totals: {
@@ -103,6 +104,21 @@ const MeetingDetails: React.FC<MeetingDetailsProps> = ({ meeting: initialMeeting
     const [isCopied, setIsCopied] = useState(false);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [submittedQuery, setSubmittedQuery] = useState('');
+    // Per-meeting token/credit usage from the backend (usage_events), broken down per Q&A (turn).
+    type MeetingUsage = Awaited<ReturnType<NonNullable<typeof window.electronAPI.getMeetingUsage>>>;
+    const [meetingUsage, setMeetingUsage] = useState<MeetingUsage | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        if (!meeting.id || !window.electronAPI?.getMeetingUsage) {
+            setMeetingUsage(null);
+            return;
+        }
+        window.electronAPI.getMeetingUsage(meeting.id)
+            .then((r) => { if (!cancelled) setMeetingUsage(r); })
+            .catch(() => { if (!cancelled) setMeetingUsage(null); });
+        return () => { cancelled = true; };
+    }, [meeting.id]);
 
     const handleSubmitQuestion = () => {
         if (query.trim()) {
@@ -557,8 +573,8 @@ ${meeting.detailedSummary.keyPoints?.map(item => `- ${item}`).join('\n') || 'Non
                         {activeTab === 'analysis' && (
                             <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-8 pb-10">
                                 {(() => {
-                                    const tu = meeting.tokenUsage;
-                                    if (!tu || (!tu.totals.llmCallCount && !tu.totals.sttSeconds)) {
+                                    const mu = meetingUsage;
+                                    if (!mu || mu.credits === 0) {
                                         return (
                                             <div className="text-text-tertiary text-sm">
                                                 <p>{t('meetingDetails.noUsage')}</p>
@@ -567,82 +583,89 @@ ${meeting.detailedSummary.keyPoints?.map(item => `- ${item}`).join('\n') || 'Non
                                         );
                                     }
                                     const fmtNum = (n: number) => n.toLocaleString();
-                                    const fmtCost = (n: number) => n < 0.01 ? `$${n.toFixed(4)}` : `$${n.toFixed(3)}`;
-                                    const fmtSeconds = (s: number) => {
-                                        const m = Math.floor(s / 60);
-                                        const sec = Math.floor(s % 60);
-                                        return `${m}:${sec.toString().padStart(2, '0')}`;
-                                    };
+                                    const cardCls = `rounded-xl border p-4 ${isLight ? 'bg-white border-black/[0.06]' : 'bg-[#1A1A1C] border-white/[0.08]'}`;
+
+                                    // Join each Q&A interaction to its turn usage; collect unmatched turns
+                                    // (incl. the null-turn bucket = system/summary calls) into "other".
+                                    const turnsById = new Map(mu.turns.filter(tn => tn.turn_id).map(tn => [tn.turn_id as string, tn]));
+                                    const matched = new Set<string>();
+                                    const rows: Array<{ label: string; input: number; output: number; credits: number }> = [];
+                                    for (const it of (meeting.usage || [])) {
+                                        if (it.turnId && turnsById.has(it.turnId)) {
+                                            const tn = turnsById.get(it.turnId)!;
+                                            rows.push({ label: it.question || t('meetingDetails.analysis.whatToAnswer'), input: tn.input_tokens, output: tn.output_tokens, credits: tn.credits });
+                                            matched.add(it.turnId);
+                                        }
+                                    }
+                                    let oIn = 0, oOut = 0, oCr = 0, hasOther = false;
+                                    for (const tn of mu.turns) {
+                                        if (tn.turn_id && matched.has(tn.turn_id)) continue;
+                                        oIn += tn.input_tokens; oOut += tn.output_tokens; oCr += tn.credits; hasOther = true;
+                                    }
+
                                     return (
                                         <div className="space-y-8">
-                                            {/* Top-level totals */}
+                                            {/* Meeting totals */}
                                             <section>
                                                 <h2 className="text-lg font-semibold text-text-primary mb-4">{t('meetingDetails.analysis.thisMeeting')}</h2>
-                                                <div className="grid grid-cols-2 gap-3">
-                                                    <div className={`rounded-xl border p-4 ${isLight ? 'bg-white border-black/[0.06]' : 'bg-[#1A1A1C] border-white/[0.08]'}`}>
-                                                        <div className="text-xs text-text-tertiary uppercase tracking-wider mb-1">{t('meetingDetails.analysis.totalCost')}</div>
-                                                        <div className="text-2xl font-semibold text-text-primary">{fmtCost(tu.totals.totalCost)}</div>
-                                                        <div className="text-xs text-text-tertiary mt-1">LLM {fmtCost(tu.totals.llmCost)} · STT {fmtCost(tu.totals.sttCost)}</div>
+                                                <div className="grid grid-cols-3 gap-3">
+                                                    <div className={cardCls}>
+                                                        <div className="text-xs text-text-tertiary uppercase tracking-wider mb-1">{t('meetingDetails.analysis.input')}</div>
+                                                        <div className="text-2xl font-semibold text-text-primary tabular-nums">{fmtNum(mu.input_tokens)}</div>
                                                     </div>
-                                                    <div className={`rounded-xl border p-4 ${isLight ? 'bg-white border-black/[0.06]' : 'bg-[#1A1A1C] border-white/[0.08]'}`}>
-                                                        <div className="text-xs text-text-tertiary uppercase tracking-wider mb-1">{t('meetingDetails.analysis.llmCalls')}</div>
-                                                        <div className="text-2xl font-semibold text-text-primary">{fmtNum(tu.totals.llmCallCount)}</div>
-                                                        <div className="text-xs text-text-tertiary mt-1">{t('meetingDetails.analysis.requestsIssued')}</div>
+                                                    <div className={cardCls}>
+                                                        <div className="text-xs text-text-tertiary uppercase tracking-wider mb-1">{t('meetingDetails.analysis.output')}</div>
+                                                        <div className="text-2xl font-semibold text-text-primary tabular-nums">{fmtNum(mu.output_tokens)}</div>
                                                     </div>
-                                                    <div className={`rounded-xl border p-4 ${isLight ? 'bg-white border-black/[0.06]' : 'bg-[#1A1A1C] border-white/[0.08]'}`}>
-                                                        <div className="text-xs text-text-tertiary uppercase tracking-wider mb-1">{t('meetingDetails.analysis.inputTokens')}</div>
-                                                        <div className="text-2xl font-semibold text-text-primary">{fmtNum(tu.totals.inputTokens)}</div>
-                                                        {tu.totals.cachedInputTokens > 0 && (
-                                                            <div className="text-xs text-text-tertiary mt-1">{t('meetingDetails.analysis.cachedSuffix', { count: tu.totals.cachedInputTokens, formatted: fmtNum(tu.totals.cachedInputTokens) })}</div>
-                                                        )}
-                                                    </div>
-                                                    <div className={`rounded-xl border p-4 ${isLight ? 'bg-white border-black/[0.06]' : 'bg-[#1A1A1C] border-white/[0.08]'}`}>
-                                                        <div className="text-xs text-text-tertiary uppercase tracking-wider mb-1">{t('meetingDetails.analysis.outputTokens')}</div>
-                                                        <div className="text-2xl font-semibold text-text-primary">{fmtNum(tu.totals.outputTokens)}</div>
-                                                        <div className="text-xs text-text-tertiary mt-1">{t('meetingDetails.analysis.generated')}</div>
+                                                    <div className={cardCls}>
+                                                        <div className="text-xs text-text-tertiary uppercase tracking-wider mb-1">{t('meetingDetails.analysis.credits')}</div>
+                                                        <div className="text-2xl font-semibold text-accent-primary tabular-nums">{fmtNum(mu.credits)}</div>
                                                     </div>
                                                 </div>
-                                                {tu.totals.sttSeconds > 0 && (
-                                                    <div className={`mt-3 rounded-xl border p-4 ${isLight ? 'bg-white border-black/[0.06]' : 'bg-[#1A1A1C] border-white/[0.08]'}`}>
-                                                        <div className="text-xs text-text-tertiary uppercase tracking-wider mb-1">{t('meetingDetails.analysis.sttAudio')}</div>
-                                                        <div className="text-2xl font-semibold text-text-primary">{fmtSeconds(tu.totals.sttSeconds)}</div>
-                                                    </div>
-                                                )}
                                             </section>
 
-                                            {/* By Model */}
-                                            {tu.byModel?.length > 0 && (
-                                                <section>
-                                                    <h2 className="text-lg font-semibold text-text-primary mb-4">{t('meetingDetails.analysis.byModel')}</h2>
-                                                    <div className={`rounded-xl border overflow-hidden ${isLight ? 'border-black/[0.06]' : 'border-white/[0.08]'}`}>
-                                                        <table className="w-full text-sm">
-                                                            <thead className={isLight ? 'bg-[#F5F5F7] text-text-secondary' : 'bg-[#1A1A1C] text-text-tertiary'}>
-                                                                <tr>
-                                                                    <th className="text-left px-4 py-2 font-medium text-xs uppercase tracking-wider">{t('meetingDetails.analysis.providerModel')}</th>
-                                                                    <th className="text-right px-4 py-2 font-medium text-xs uppercase tracking-wider">{t('meetingDetails.analysis.calls')}</th>
-                                                                    <th className="text-right px-4 py-2 font-medium text-xs uppercase tracking-wider">{t('meetingDetails.analysis.input')}</th>
-                                                                    <th className="text-right px-4 py-2 font-medium text-xs uppercase tracking-wider">{t('meetingDetails.analysis.output')}</th>
-                                                                    <th className="text-right px-4 py-2 font-medium text-xs uppercase tracking-wider">{t('meetingDetails.analysis.cost')}</th>
+                                            {/* Per Q&A */}
+                                            <section>
+                                                <h2 className="text-lg font-semibold text-text-primary mb-4">{t('meetingDetails.analysis.byQuestion')}</h2>
+                                                <div className={`rounded-xl border overflow-hidden ${isLight ? 'border-black/[0.06]' : 'border-white/[0.08]'}`}>
+                                                    <table className="w-full text-sm">
+                                                        <thead className={isLight ? 'bg-[#F5F5F7] text-text-secondary' : 'bg-[#1A1A1C] text-text-tertiary'}>
+                                                            <tr>
+                                                                <th className="text-left px-4 py-2 font-medium text-xs uppercase tracking-wider">{t('meetingDetails.analysis.question')}</th>
+                                                                <th className="text-right px-4 py-2 font-medium text-xs uppercase tracking-wider">{t('meetingDetails.analysis.input')}</th>
+                                                                <th className="text-right px-4 py-2 font-medium text-xs uppercase tracking-wider">{t('meetingDetails.analysis.output')}</th>
+                                                                <th className="text-right px-4 py-2 font-medium text-xs uppercase tracking-wider">{t('meetingDetails.analysis.credits')}</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {rows.map((r, i) => (
+                                                                <tr key={i} className={isLight ? 'border-t border-black/[0.04]' : 'border-t border-white/[0.04]'}>
+                                                                    <td className="px-4 py-2.5 text-text-primary max-w-[320px] truncate">{r.label}</td>
+                                                                    <td className="px-4 py-2.5 text-right text-text-secondary tabular-nums">{fmtNum(r.input)}</td>
+                                                                    <td className="px-4 py-2.5 text-right text-text-secondary tabular-nums">{fmtNum(r.output)}</td>
+                                                                    <td className="px-4 py-2.5 text-right text-accent-primary font-medium tabular-nums">{fmtNum(r.credits)}</td>
                                                                 </tr>
-                                                            </thead>
-                                                            <tbody>
-                                                                {tu.byModel.map((m, i) => (
-                                                                    <tr key={i} className={isLight ? 'border-t border-black/[0.04]' : 'border-t border-white/[0.04]'}>
-                                                                        <td className="px-4 py-2.5 text-text-primary">
-                                                                            <span className="font-medium">{m.provider}</span>
-                                                                            {m.model && <span className="text-text-tertiary ml-2 text-xs font-mono">{m.model}</span>}
-                                                                        </td>
-                                                                        <td className="px-4 py-2.5 text-right text-text-secondary tabular-nums">{fmtNum(m.callCount)}</td>
-                                                                        <td className="px-4 py-2.5 text-right text-text-secondary tabular-nums">{fmtNum(m.inputTokens)}</td>
-                                                                        <td className="px-4 py-2.5 text-right text-text-secondary tabular-nums">{fmtNum(m.outputTokens)}</td>
-                                                                        <td className="px-4 py-2.5 text-right text-text-primary font-medium tabular-nums">{fmtCost(m.cost)}</td>
-                                                                    </tr>
-                                                                ))}
-                                                            </tbody>
-                                                        </table>
-                                                    </div>
-                                                </section>
-                                            )}
+                                                            ))}
+                                                            {hasOther && (
+                                                                <tr className={isLight ? 'border-t border-black/[0.04]' : 'border-t border-white/[0.04]'}>
+                                                                    <td className="px-4 py-2.5 text-text-tertiary italic">{t('meetingDetails.analysis.systemOther')}</td>
+                                                                    <td className="px-4 py-2.5 text-right text-text-secondary tabular-nums">{fmtNum(oIn)}</td>
+                                                                    <td className="px-4 py-2.5 text-right text-text-secondary tabular-nums">{fmtNum(oOut)}</td>
+                                                                    <td className="px-4 py-2.5 text-right text-accent-primary font-medium tabular-nums">{fmtNum(oCr)}</td>
+                                                                </tr>
+                                                            )}
+                                                        </tbody>
+                                                        <tfoot>
+                                                            <tr className={`border-t ${isLight ? 'border-black/[0.1] bg-[#F5F5F7]' : 'border-white/[0.1] bg-[#1A1A1C]'}`}>
+                                                                <td className="px-4 py-2.5 text-text-primary font-semibold uppercase text-xs tracking-wider">{t('meetingDetails.analysis.total')}</td>
+                                                                <td className="px-4 py-2.5 text-right text-text-primary font-semibold tabular-nums">{fmtNum(mu.input_tokens)}</td>
+                                                                <td className="px-4 py-2.5 text-right text-text-primary font-semibold tabular-nums">{fmtNum(mu.output_tokens)}</td>
+                                                                <td className="px-4 py-2.5 text-right text-accent-primary font-bold tabular-nums">{fmtNum(mu.credits)}</td>
+                                                            </tr>
+                                                        </tfoot>
+                                                    </table>
+                                                </div>
+                                            </section>
 
                                             <p className="text-xs text-text-tertiary">
                                                 {t('meetingDetails.analysis.disclaimer')}

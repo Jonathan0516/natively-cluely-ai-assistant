@@ -266,6 +266,9 @@ export class CloudClient {
     images?: string[]
     max_tokens?: number
     temperature?: number
+    reasoning_effort?: string
+    meeting_id?: string
+    turn_id?: string
   }): AsyncGenerator<string, void, unknown> {
     const token = await this.accessToken()
     const resp = await fetch(`${backendUrl()}/llm/chat`, {
@@ -307,6 +310,8 @@ export class CloudClient {
     model: string
     messages: { role: string; content: string }[]
     images?: string[]
+    meeting_id?: string
+    turn_id?: string
   }): Promise<{ text: string }> {
     return this.post(`/llm/json`, body)
   }
@@ -331,7 +336,54 @@ export class CloudClient {
       tier: string
       capabilities: string[]
       available: boolean
+      latency_hint?: string
     }>>(`/llm/models`)
+  }
+
+  /** Per-meeting usage (current period): token usage + credits, broken down by model. */
+  getLlmUsage() {
+    return this.get<Array<{
+      meeting_id: string
+      last_used: string
+      input_tokens: number
+      output_tokens: number
+      credits: number
+      models: Array<{
+        model: string
+        label: string
+        input_tokens: number
+        output_tokens: number
+        credits: number
+        rate_input: number
+        rate_output: number
+      }>
+    }>>(`/llm/usage`)
+  }
+
+  /** One meeting's usage broken down per turn (Q&A) and per model. */
+  getMeetingUsage(meetingId: string) {
+    return this.get<{
+      meeting_id: string
+      input_tokens: number
+      output_tokens: number
+      credits: number
+      turns: Array<{
+        turn_id: string | null
+        calls: number
+        input_tokens: number
+        output_tokens: number
+        credits: number
+        models: Array<{
+          model: string
+          label: string
+          input_tokens: number
+          output_tokens: number
+          credits: number
+          rate_input: number
+          rate_output: number
+        }>
+      }>
+    }>(`/llm/usage/meeting/${encodeURIComponent(meetingId)}`)
   }
 
   // --------------------------------------------------------------------- //

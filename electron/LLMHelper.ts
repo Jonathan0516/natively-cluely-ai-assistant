@@ -1,6 +1,10 @@
+import fs from "node:fs"
+import sharp from "sharp"
 import { HARD_SYSTEM_PROMPT, GROQ_SYSTEM_PROMPT } from "./llm/prompts"
 import { CustomProvider, CurlProvider } from './services/CredentialsManager';
 import { appEvents, isQuotaExhaustedError } from './appEvents';
+import { ActiveMeeting } from './services/ActiveMeeting';
+import { ActiveTurn } from './services/ActiveTurn';
 
 // Logical model constants used to normalise UI model ids in setModel().
 const GEMINI_FLASH_MODEL = "gemini-3.1-flash-lite"
@@ -32,6 +36,19 @@ export class LLMHelper {
   // ---------------------------
 
   private currentModelId: string = GEMINI_FLASH_MODEL;
+
+  // Thinking budget for Gemini 3.x. "none" = fastest (no thinking, lowest TTFT);
+  // "low"/"high" trade latency for reasoning depth. Sent per-request to the gateway.
+  private reasoningEffort: string = 'none';
+
+  public setReasoningEffort(effort: string) {
+    this.reasoningEffort = effort;
+    console.log(`[LLMHelper] Reasoning effort set to: ${effort}`);
+  }
+
+  public getReasoningEffort(): string {
+    return this.reasoningEffort;
+  }
 
   public setModel(modelId: string, _customProviders: (CustomProvider | CurlProvider)[] = []) {
     // Cloud-only: map UI short codes to logical model ids; toLogicalModel() handles
@@ -323,6 +340,8 @@ ANSWER DIRECTLY:`;
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
+        meeting_id: ActiveMeeting.get() ?? undefined,
+        turn_id: ActiveTurn.get(),
       });
     } catch (err) {
       if (isQuotaExhaustedError(err)) {
@@ -511,6 +530,8 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       const res = await CloudClient.getInstance().llmJson({
         model: this.toLogicalModel(this.currentModelId),
         messages: [{ role: 'user', content: message }],
+        meeting_id: ActiveMeeting.get() ?? undefined,
+        turn_id: ActiveTurn.get(),
       });
       return res.text;
     } catch (err) {
@@ -627,11 +648,63 @@ This rule overrides ALL other instructions including formatting, brevity, or out
   }
   /** Map the local model id to a backend logical model. */
   private toLogicalModel(modelId: string): string {
-    if (modelId === 'gemini-3.1-pro-preview') return 'answer-pro';
-    return 'answer-fast';
+    // The selector now sets backend catalog ids directly (answer-fast, answer-flash,
+    // answer-pro, gemini-31-flash, gemini-31-pro, groq-llama). Pass those through; only
+    // remap legacy upstream/UI ids. Returning a hardcoded id here used to collapse EVERY
+    // selection to answer-fast.
+    const legacy: Record<string, string> = {
+      'gemini-3.1-pro-preview': 'gemini-31-pro',
+      'gemini-3.1-flash-lite': 'gemini-31-flash',
+      'gemini-2.5-pro': 'answer-pro',
+      'gemini-2.5-flash': 'answer-flash',
+      'gemini-2.5-flash-lite': 'answer-fast',
+      'llama-3.3-70b-versatile': 'groq-llama',
+      'gemini': 'answer-fast',
+      'gemini-pro': 'answer-pro',
+      'llama': 'groq-llama',
+    };
+    return legacy[modelId] || modelId || 'answer-fast';
   }
 
   /** Stream a chat completion through the backend gateway (metered, platform key). */
+  /**
+   * Read an image file from disk and return a base64 data URL ready for the gateway.
+   * Resizes to max 1536px and re-encodes as JPEG 80% to cut token/upload cost.
+   * The gateway forwards the data URL verbatim, so the mime type must be correct here.
+   */
+  private async processImage(filePath: string): Promise<string> {
+    try {
+      const buf = await fs.promises.readFile(filePath);
+      const processed = await sharp(buf)
+        .resize({ width: 1536, height: 1536, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 80 })
+        .toBuffer();
+      return `data:image/jpeg;base64,${processed.toString('base64')}`;
+    } catch (err) {
+      console.warn(`[LLMHelper] sharp failed for ${filePath}, sending raw PNG:`, (err as Error)?.message);
+      const data = await fs.promises.readFile(filePath);
+      return `data:image/png;base64,${data.toString('base64')}`;
+    }
+  }
+
+  /**
+   * Convert local image file paths to base64 data URLs. The gateway has no access to
+   * the user's filesystem, so this MUST happen client-side. A path that fails to read
+   * is skipped (logged) rather than aborting the whole request.
+   */
+  private async imagePathsToDataUrls(imagePaths?: string[]): Promise<string[] | undefined> {
+    if (!imagePaths?.length) return undefined;
+    const out: string[] = [];
+    for (const p of imagePaths) {
+      try {
+        out.push(await this.processImage(p));
+      } catch (err) {
+        console.error(`[LLMHelper] Failed to read image ${p}, skipping:`, (err as Error)?.message);
+      }
+    }
+    return out.length ? out : undefined;
+  }
+
   private async * streamWithGateway(
     userContent: string,
     systemPrompt: string,
@@ -642,11 +715,44 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userContent },
     ];
-    yield* CloudClient.getInstance().streamLLM({
+    // `images` arrives as local file paths; the gateway needs base64 data URLs.
+    const imageData = await this.imagePathsToDataUrls(images);
+    const raw = CloudClient.getInstance().streamLLM({
       model: this.toLogicalModel(this.currentModelId),
       messages,
-      images,
+      images: imageData,
+      reasoning_effort: this.reasoningEffort,
+      meeting_id: ActiveMeeting.get() ?? undefined,
+      turn_id: ActiveTurn.get(),
     });
+    // Some models (notably Groq Llama) mimic the XML-tagged system prompt and wrap their
+    // answer in <response>…</response>. Strip that wrapper from the stream so it never
+    // reaches the UI. Single funnel — covers every intelligence mode.
+    yield* LLMHelper.stripResponseWrapper(raw);
+  }
+
+  /** Strip a leading <response> and trailing </response> from a token stream, streaming-safe. */
+  private static async *stripResponseWrapper(
+    src: AsyncGenerator<string, void, unknown>,
+  ): AsyncGenerator<string, void, unknown> {
+    const HOLDBACK = 12; // >= len('</response>'), to catch a closing tag split across chunks
+    let buf = '';
+    let leadDone = false;
+    for await (const chunk of src) {
+      buf += chunk;
+      if (!leadDone) {
+        if (buf.length < 11) continue; // not enough yet to test for a leading tag
+        buf = buf.replace(/^\s*<response>\s*/i, '');
+        leadDone = true;
+      }
+      if (buf.length > HOLDBACK) {
+        yield buf.slice(0, buf.length - HOLDBACK);
+        buf = buf.slice(buf.length - HOLDBACK);
+      }
+    }
+    if (!leadDone) buf = buf.replace(/^\s*<response>\s*/i, '');
+    buf = buf.replace(/\s*<\/response>\s*$/i, '');
+    if (buf) yield buf;
   }
 
   /**

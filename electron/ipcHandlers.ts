@@ -742,6 +742,16 @@ export function initializeIpcHandlers(appState: AppState): void {
     return await CloudClient.getInstance().getLlmModels();
   });
 
+  safeHandle("get-llm-usage", async () => {
+    const { CloudClient } = require('./services/CloudClient');
+    return await CloudClient.getInstance().getLlmUsage();
+  });
+
+  safeHandle("get-meeting-usage", async (_event, meetingId: string) => {
+    const { CloudClient } = require('./services/CloudClient');
+    return await CloudClient.getInstance().getMeetingUsage(meetingId);
+  });
+
   // Cloud STT on/off toggle (transcription always runs through the backend relay).
   safeHandle("set-stt-provider", async (_, provider: 'none' | 'deepgram') => {
     try {
@@ -799,6 +809,24 @@ export function initializeIpcHandlers(appState: AppState): void {
     }
   });
 
+  // Set the Gemini thinking budget at runtime (session-only). Broadcast so all windows
+  // can reflect the toggle state.
+  safeHandle("set-reasoning-effort", async (_, effort: string) => {
+    try {
+      const llmHelper = appState.processingHelper.getLLMHelper();
+      llmHelper.setReasoningEffort(effort);
+      BrowserWindow.getAllWindows().forEach(win => {
+        if (!win.isDestroyed()) {
+          win.webContents.send('reasoning-effort-changed', effort);
+        }
+      });
+      return { success: true };
+    } catch (error: any) {
+      console.error("Error setting reasoning effort:", error);
+      return { success: false, error: error.message };
+    }
+  });
+
   // Persist default model (from Settings) + update runtime + broadcast to all windows
   safeHandle("set-default-model", async (_, modelId: string) => {
     try {
@@ -835,7 +863,7 @@ export function initializeIpcHandlers(appState: AppState): void {
       return { model: cm.getDefaultModel() };
     } catch (error: any) {
       console.error("Error getting default model:", error);
-      return { model: 'gemini-3.1-flash-lite' };
+      return { model: 'answer-fast' };
     }
   });
 
@@ -909,9 +937,10 @@ export function initializeIpcHandlers(appState: AppState): void {
     }
   });
 
-  safeHandle("get-recent-meetings", async () => {
-    // Fetch from SQLite (limit 50)
-    return DatabaseManager.getInstance().getRecentMeetings(50);
+  safeHandle("get-recent-meetings", async (_event, limit?: number) => {
+    // Fetch from SQLite (default limit 50; callers like the usage view pass more to cover
+    // the full billing period when resolving meeting_id → title).
+    return DatabaseManager.getInstance().getRecentMeetings(typeof limit === "number" ? limit : 50);
   });
 
   safeHandle("get-meeting-details", async (event, id) => {

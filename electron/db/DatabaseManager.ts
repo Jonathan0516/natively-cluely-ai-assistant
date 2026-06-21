@@ -35,6 +35,7 @@ export interface Meeting {
         question?: string;
         answer?: string;
         items?: string[];
+        turnId?: string;
     }>;
     calendarEventId?: string;
     source?: 'manual' | 'calendar';
@@ -89,10 +90,13 @@ export class DatabaseManager {
     private static rowToMeetingDetails(data: any): Meeting {
         const m = data.meeting; const s = m.summary_json || {};
         const transcript = (data.transcripts || []).map((r: any) => ({ speaker: r.speaker, text: r.content, timestamp: r.timestamp_ms }));
-        const usage = (data.ai_interactions || []).map((r: any) => ({
-            type: r.type, timestamp: r.timestamp, question: r.user_query, answer: r.ai_response,
-            items: Array.isArray(r.metadata_json) ? r.metadata_json : undefined,
-        }));
+        const usage = (data.ai_interactions || []).map((r: any) => {
+            // metadata_json is either a bare array (legacy: items) or an object { items?, turnId? }.
+            const md = r.metadata_json;
+            const items = Array.isArray(md) ? md : (md && Array.isArray(md.items) ? md.items : undefined);
+            const turnId = (md && !Array.isArray(md) && typeof md.turnId === 'string') ? md.turnId : undefined;
+            return { type: r.type, timestamp: r.timestamp, question: r.user_query, answer: r.ai_response, items, turnId };
+        });
         return {
             id: m.id, title: m.title, date: m.created_at,
             duration: DatabaseManager.durationString(m.duration_ms),
@@ -1014,9 +1018,18 @@ export class DatabaseManager {
         const summaryJson = { legacySummary: meeting.summary, detailedSummary: meeting.detailedSummary };
         const transcripts = (meeting.transcript || []).map(s => ({ speaker: s.speaker, content: s.text, timestamp_ms: s.timestamp }));
         const aiInteractions = (meeting.usage || []).map(u => {
+            let items: any = null;
+            if (u.items) items = u.items;
+            else if (u.type === 'followup_questions' && Array.isArray(u.answer)) items = u.answer;
+            // metadata_json now carries both the legacy `items` array and the turn id used to
+            // attribute per-Q&A token usage. Stored as an object; reads stay backward-compatible
+            // with old rows where metadata_json was a bare array (see getMeetingDetails).
             let metadata: any = null;
-            if (u.items) metadata = u.items;
-            else if (u.type === 'followup_questions' && Array.isArray(u.answer)) metadata = u.answer;
+            if (u.turnId || items) {
+                metadata = {};
+                if (items) metadata.items = items;
+                if (u.turnId) metadata.turnId = u.turnId;
+            }
             const answerText = Array.isArray(u.answer) ? null : (u.answer || null);
             return { type: u.type, timestamp: u.timestamp, user_query: u.question || null, ai_response: answerText, metadata_json: metadata };
         });

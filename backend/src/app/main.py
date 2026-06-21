@@ -26,6 +26,18 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Natively Backend", version="0.1.0", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def stamp_arrival(request, call_next):
+    """Record request arrival before auth runs, so handlers can attribute the
+    auth (get_current_user) round-trip in their own latency breakdowns."""
+    import time
+
+    request.state.t0 = time.perf_counter()
+    return await call_next(request)
+
+
 # CORS — the Electron renderer can show up as http://localhost:5173 (Vite dev),
 # file:// (packaged), or app:// custom protocol. Allow all in dev; tighten in prod.
 app.add_middleware(

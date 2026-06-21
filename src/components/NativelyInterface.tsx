@@ -28,7 +28,8 @@ import {
     Copy,
     Check,
     PointerOff,
-    Network
+    Network,
+    Brain
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -152,8 +153,22 @@ const NativelyInterface: React.FC<NativelyInterfaceProps> = ({ onEndMeeting, ove
         return () => unsub?.();
     }, []);
 
-    // Model Selection State
-    const [currentModel, setCurrentModel] = useState<string>('gemini-3-flash-preview');
+    // Model Selection State. currentModel is always a catalog id from the live model list
+    // (answer-fast/answer-flash/answer-pro) so it stays in sync with — and reselectable in —
+    // the dropdown. availableModels backs the toolbar label lookup.
+    const [currentModel, setCurrentModel] = useState<string>('');
+    const [availableModels, setAvailableModels] = useState<Array<{ id: string; label: string }>>([]);
+
+    // Thinking budget (Gemini 3.x): 'none' = fastest first token, 'low'/'high' = more reasoning.
+    // Cycled by the toolbar button; sent to the gateway per request via LLMHelper.
+    const [reasoningEffort, setReasoningEffort] = useState<'none' | 'low' | 'high'>('none');
+    const cycleReasoningEffort = () => {
+        setReasoningEffort(prev => {
+            const next = prev === 'none' ? 'low' : prev === 'low' ? 'high' : 'none';
+            window.electronAPI?.setReasoningEffort?.(next);
+            return next;
+        });
+    };
 
     // Dynamic Action Button Mode (Recap vs Brainstorm)
     const [actionButtonMode, setActionButtonMode] = useState<'recap' | 'brainstorm'>('recap');
@@ -187,19 +202,29 @@ const NativelyInterface: React.FC<NativelyInterfaceProps> = ({ onEndMeeting, ove
     const controlSurfaceClass = 'overlay-control-surface overlay-text-interactive';
 
     useEffect(() => {
-        // Load the persisted default model (not the runtime model)
-        // Each new meeting starts with the default from settings
-        if (window.electronAPI?.getDefaultModel) {
-            window.electronAPI.getDefaultModel()
-                .then((result: any) => {
-                    if (result && result.model) {
-                        setCurrentModel(result.model);
-                        // Also set the runtime model to the default
-                        window.electronAPI.setModel(result.model).catch(() => { });
-                    }
-                })
-                .catch((err: any) => console.error("Failed to fetch default model:", err));
-        }
+        let cancelled = false;
+        (async () => {
+            try {
+                const models = (await window.electronAPI?.getLlmModels?.()) || [];
+                const avail = models.filter(m => m.available).map(m => ({ id: m.id, label: m.label }));
+                if (cancelled) return;
+                setAvailableModels(avail);
+
+                // Pick the starting model: the persisted default if it's still a valid catalog
+                // option, otherwise the first available one. This prevents the toolbar from being
+                // stuck on a stale id (e.g. the old gemini-3.1) that no longer appears in the list.
+                let start = '';
+                try { start = (await window.electronAPI?.getDefaultModel?.())?.model || ''; } catch { /* ignore */ }
+                const ids = new Set(avail.map(m => m.id));
+                if (!ids.has(start)) start = avail[0]?.id || '';
+                if (cancelled || !start) return;
+                setCurrentModel(start);
+                window.electronAPI?.setModel?.(start).catch(() => { });
+            } catch (err) {
+                console.error("Failed to init models:", err);
+            }
+        })();
+        return () => { cancelled = true; };
     }, []);
 
     const handleModelSelect = (modelId: string) => {
@@ -2401,7 +2426,19 @@ Provide only the answer, nothing else.`;
                                             <span className="truncate min-w-0 flex-1">
                                                 {(() => {
                                                     const m = currentModel;
+                                                    // Prefer the live catalog label so the button always matches a
+                                                    // selectable list item.
+                                                    const found = availableModels.find(x => x.id === m);
+                                                    if (found) return found.label;
+                                                    if (!m) return 'Model';
                                                     if (m.startsWith('ollama-')) return m.replace('ollama-', '');
+                                                    // Logical gateway ids (what setModel now uses).
+                                                    if (m === 'answer-fast') return 'Gemini 2.5 Flash Lite';
+                                                    if (m === 'answer-flash') return 'Gemini 2.5 Flash';
+                                                    if (m === 'answer-pro') return 'Gemini 2.5 Pro';
+                                                    if (m === 'gemini-2.5-flash-lite') return 'Gemini 2.5 Flash Lite';
+                                                    if (m === 'gemini-2.5-flash') return 'Gemini 2.5 Flash';
+                                                    if (m === 'gemini-2.5-pro') return 'Gemini 2.5 Pro';
                                                     if (m === 'gemini-3.1-flash-lite') return 'Gemini 3.1 Flash';
                                                     if (m === 'gemini-3.1-pro-preview') return 'Gemini 3.1 Pro';
                                                     if (m === 'llama-3.3-70b-versatile') return 'Groq Llama 3.3';
@@ -2455,6 +2492,27 @@ Provide only the answer, nothing else.`;
                                         </div>
 
 
+
+                                        {/* Thinking budget toggle (Gemini 3.x): off → low → high */}
+                                        <div className="relative">
+                                            <button
+                                                onClick={cycleReasoningEffort}
+                                                title={`Thinking: ${reasoningEffort === 'none' ? 'Off (fastest)' : reasoningEffort === 'low' ? 'Low' : 'High'}`}
+                                                className={`
+                                                    w-7 h-7 flex items-center justify-center rounded-lg
+                                                    interaction-base interaction-press
+                                                    ${reasoningEffort !== 'none'
+                                                        ? 'overlay-icon-surface overlay-icon-surface-hover text-violet-400 opacity-100'
+                                                        : 'overlay-icon-surface overlay-icon-surface-hover overlay-text-interactive'}
+                                                `}
+                                                style={appearance.iconStyle}
+                                            >
+                                                <Brain className={`w-3.5 h-3.5 ${reasoningEffort === 'high' ? 'opacity-100' : reasoningEffort === 'low' ? 'opacity-80' : ''}`} />
+                                                {reasoningEffort === 'high' && (
+                                                    <span className="absolute bottom-0.5 right-0.5 w-1 h-1 rounded-full bg-violet-400" />
+                                                )}
+                                            </button>
+                                        </div>
 
                                         {/* Mouse Passthrough Toggle */}
                                         <div className="relative">

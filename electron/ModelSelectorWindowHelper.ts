@@ -129,8 +129,10 @@ export class ModelSelectorWindowHelper {
 
     private createWindow(x?: number, y?: number, showWhenReady: boolean = true): void {
         const windowSettings: Electron.BrowserWindowConstructorOptions = {
-            width: 140,
-            height: 200,
+            // Matches the panel: 184px wide (fits the latency badge) and tall enough for the
+            // full model list (~6 rows). The panel is max-h-[240px] and scrolls if it grows more.
+            width: 184,
+            height: 232,
             frame: false,
             transparent: true,
             resizable: false,

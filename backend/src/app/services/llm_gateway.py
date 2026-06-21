@@ -41,7 +41,9 @@ class LLMGateway:
         for mid in self._chain(model_id):
             try:
                 spec, prov = self.resolve(mid)
-                res = await prov.generate_json(spec.upstream_model, messages, params)
+                res = await prov.generate_json(
+                    spec.upstream_model, messages, {**spec.extra_params, **params}
+                )
                 return spec, res
             except Exception as exc:  # noqa: BLE001 — fallback is intentional
                 logger.warning("generate_json %s failed: %s", mid, exc)
@@ -55,7 +57,9 @@ class LLMGateway:
         for mid in self._chain(model_id):
             try:
                 spec, prov = self.resolve(mid)
-                stream = prov.stream_chat(spec.upstream_model, messages, images, params)
+                stream = prov.stream_chat(
+                    spec.upstream_model, messages, images, {**spec.extra_params, **params}
+                )
                 # peek the first item so a provider that fails immediately can still fall back
                 agen = stream.__aiter__()
                 first = await agen.__anext__()

@@ -10,6 +10,7 @@ interface ModelOption {
     name: string;
     type: 'cloud' | 'local' | 'custom' | 'ollama';
     provider?: string;
+    latencyHint?: string;   // expected TTFT, shown on the right
 }
 
 
@@ -44,7 +45,7 @@ const ModelSelectorWindow = () => {
                 const catalog = await window.electronAPI.getLlmModels();
                 const models: ModelOption[] = (catalog || [])
                     .filter(m => m.available)
-                    .map(m => ({ id: m.id, name: m.label, type: 'cloud' as const, provider: m.tier }));
+                    .map(m => ({ id: m.id, name: m.label, type: 'cloud' as const, provider: m.tier, latencyHint: m.latency_hint }));
 
                 localStorage.setItem('cached-models', JSON.stringify(models));
                 setAvailableModels(models);
@@ -84,13 +85,11 @@ const ModelSelectorWindow = () => {
             .catch((err: any) => console.error("Failed to set model:", err));
     };
 
-    const panelClass = isLight
-        ? 'bg-[#F3F4F6]/92 border-black/10 shadow-black/10'
-        : 'bg-[#1E1E1E]/80 border-white/10 shadow-black/40';
-
     return (
         <div className="w-fit h-fit bg-transparent flex flex-col">
-            <div className={`w-[140px] h-[200px] backdrop-blur-md border rounded-[16px] overflow-hidden shadow-2xl p-2 flex flex-col animate-scale-in origin-top-left ${panelClass}`}>
+            {/* overlay-shell-surface = same glass bg/blur/border as the main overlay shell, so
+                the dropdown's transparency matches the rest of the interface. */}
+            <div className="w-[184px] max-h-[240px] border rounded-[16px] overflow-hidden p-2 flex flex-col animate-scale-in origin-top-left overlay-shell-surface">
 
                 {isLoading ? (
                     <div className={`flex items-center justify-center py-4 ${isLight ? 'text-slate-400' : 'text-slate-500'}`}>
@@ -118,8 +117,15 @@ const ModelSelectorWindow = () => {
                                             }
                                         `}
                                     >
-                                        <span className="text-[12px] font-medium truncate flex-1 min-w-0">{model.name}</span>
-                                        {isSelected && <Check className={`w-3.5 h-3.5 shrink-0 ml-2 ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />}
+                                        <span className="text-[12px] font-medium truncate min-w-0">{model.name}</span>
+                                        <span className="flex items-center gap-1.5 shrink-0 ml-2">
+                                            {model.latencyHint && (
+                                                <span className={`text-[10px] tabular-nums ${isLight ? 'text-slate-400' : 'text-slate-500'}`}>
+                                                    {model.latencyHint}
+                                                </span>
+                                            )}
+                                            {isSelected && <Check className={`w-3.5 h-3.5 ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />}
+                                        </span>
                                     </button>
                                 );
                             })
