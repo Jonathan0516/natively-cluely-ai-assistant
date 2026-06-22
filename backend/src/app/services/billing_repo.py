@@ -50,6 +50,14 @@ class SupabaseBillingRepo:
     async def _run(self, fn, *args):
         return await asyncio.get_running_loop().run_in_executor(self._executor, fn, *args)
 
+    async def _read(self, fn):
+        """Like _run, but retries the stale-connection transport drops that postgrest's own
+        retry misses (see supabase_retry). Reads only — never wrap writes."""
+        from .supabase_retry import read_with_retry
+        return await asyncio.get_running_loop().run_in_executor(
+            self._executor, lambda: read_with_retry(fn)
+        )
+
     async def grant_credits(self, user_id: str, credits: int, event_id: str) -> bool:
         def _q():
             res = self._db.rpc(
@@ -74,4 +82,4 @@ class SupabaseBillingRepo:
             )
             rows = res.data or []
             return int(rows[0]["balance"]) if rows else 0
-        return await self._run(_q)
+        return await self._read(_q)
