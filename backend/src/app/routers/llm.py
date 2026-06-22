@@ -227,6 +227,9 @@ async def llm_usage_meeting(
 class EmbeddingsRequest(BaseModel):
     texts: list[str]
     model: str = "embed-default"
+    # Optional meeting this embedding batch belongs to (RAG indexing of a meeting's chunks /
+    # query-time embedding). Recorded on the usage event so embedding credits show per meeting.
+    meeting_id: str | None = None
 
 
 @router.post("/embeddings")
@@ -244,5 +247,6 @@ async def llm_embeddings(
         spec, res = await gateway.embed(body.model, body.texts)
     except NoModelAvailable as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
-    await meter.record(user.id, kind="embeddings", spec=spec, usage=res.usage)
+    await meter.record(user.id, kind="embeddings", spec=spec, usage=res.usage,
+                       meeting_id=body.meeting_id)
     return {"embeddings": res.vectors, "dim": res.dim, "model": spec.id}

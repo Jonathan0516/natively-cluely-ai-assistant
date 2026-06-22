@@ -20,3 +20,10 @@ async def test_embeddings_402_when_quota_exhausted(client, usage_repo):
 def test_embeddings_unknown_model_returns_400(client):
     resp = client.post("/llm/embeddings", json={"texts": ["hi"], "model": "nope"})
     assert resp.status_code == 400
+
+
+def test_embeddings_attributes_usage_to_meeting(client, usage_repo):
+    resp = client.post("/llm/embeddings", json={"texts": ["hi"], "meeting_id": "m-emb"})
+    assert resp.status_code == 200
+    emb = [e for e in usage_repo._events if e["kind"] == "embeddings"]
+    assert emb and emb[-1]["meeting_id"] == "m-emb"

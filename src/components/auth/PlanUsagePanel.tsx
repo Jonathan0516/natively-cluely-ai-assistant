@@ -30,36 +30,58 @@ interface UsageCreditCardProps {
     onReload: () => void;
 }
 
-// One line per model used in a meeting. A meeting can switch models mid-way, so `models`
-// holds one entry per distinct model (usage_events grouped by model). `rIn`/`rOut` are the
-// model's credit rate per 1k tokens — low for cheap models, high for premium — and `credits`
-// is the billed amount from the backend (already rate-applied; we display it, not recompute).
+// One line per model used in a meeting. A meeting can switch models mid-way, so a kind holds
+// one entry per distinct model. `rIn`/`rOut` are the model's credit rate per 1k tokens and
+// `rAudio` per audio second (STT); `credits` is the billed amount from the backend (already
+// rate-applied; we display it, not recompute). STT lines carry `audioSeconds` and no tokens.
 export interface UsageModelLine {
     logo: string;
     org: string;
     model: string;
     input: number;
     output: number;
+    audioSeconds: number;
     rIn: number;
     rOut: number;
+    rAudio: number;
     credits: number;
+}
+
+// Usage grouped by category: "llm" (chat/Q&A), "stt" (transcription), "embedding" (RAG indexing).
+export type UsageKind = 'llm' | 'stt' | 'embedding';
+
+export interface UsageKindGroup {
+    kind: UsageKind;
+    input: number;
+    output: number;
+    audioSeconds: number;
+    credits: number;
+    models: UsageModelLine[];
 }
 
 export interface MeetingUsage {
     id: string;
     meeting: string;
     when: string;
-    models: UsageModelLine[];
+    kinds: UsageKindGroup[];
 }
 
 const meetingTotals = (m: MeetingUsage) => {
-    let input = 0, output = 0, credits = 0;
-    for (const l of m.models) {
-        input += l.input;
-        output += l.output;
-        credits += l.credits;
+    let input = 0, output = 0, audioSeconds = 0, credits = 0;
+    for (const k of m.kinds) {
+        input += k.input;
+        output += k.output;
+        audioSeconds += k.audioSeconds;
+        credits += k.credits;
     }
-    return { input, output, credits };
+    return { input, output, audioSeconds, credits };
+};
+
+const fmtAudio = (sec: number): string => {
+    const s = Math.round(sec);
+    if (s < 60) return `${s}s`;
+    const m = Math.floor(s / 60);
+    return `${m}m ${s % 60}s`;
 };
 
 const fmtDate = (iso: string): string => {
@@ -275,7 +297,78 @@ interface UsageDetailViewProps {
     onBack: () => void;
 }
 
-/** Per-meeting detail: each model's input/output, its credit rate, and credits consumed. */
+/** One usage category (LLM / STT / Embedding) rendered as a labeled section. STT shows audio
+ *  seconds + per-second rate; LLM/Embedding show input/output tokens + per-1k rates. */
+const KindSection: React.FC<{ group: UsageKindGroup }> = ({ group }) => {
+    const { t } = useTranslation();
+    const isStt = group.kind === 'stt';
+    const kindLabel = t(`account.planUsage.kind.${group.kind}`);
+
+    return (
+        <div className="border-b border-border-subtle last:border-b-0">
+            <div className="flex items-center justify-between px-6 pt-4 pb-2">
+                <span className="text-[12px] font-bold uppercase tracking-wider text-text-secondary">{kindLabel}</span>
+                <span className="text-[13px] font-bold text-accent-primary tabular-nums">
+                    {group.credits.toLocaleString()} {t('account.planUsage.creditsUnit')}
+                </span>
+            </div>
+            <table className="w-full border-collapse">
+                <thead>
+                    <tr className="border-b border-border-subtle">
+                        <th className={`${thCls} text-left px-6`}>{t('account.planUsage.thModel')}</th>
+                        {isStt ? (
+                            <th className={`${thCls} text-right px-4`}>{t('account.planUsage.thAudio')}</th>
+                        ) : (
+                            <>
+                                <th className={`${thCls} text-right px-4`}>{t('account.planUsage.thInput')}</th>
+                                <th className={`${thCls} text-right px-4`}>{t('account.planUsage.thOutput')}</th>
+                            </>
+                        )}
+                        <th className={`${thCls} text-right px-4`}>{t('account.planUsage.thRate')}</th>
+                        <th className={`${thCls} text-right px-6`}>{t('account.planUsage.thCredits')}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {group.models.map((l, i) => (
+                        <tr key={l.model + i} className="border-b border-border-subtle last:border-b-0">
+                            <td className="px-6 py-3.5">
+                                <div className="flex items-center gap-2.5">
+                                    <span className="w-[26px] h-[26px] rounded-lg bg-bg-component text-[10px] font-extrabold text-text-secondary grid place-items-center shrink-0">
+                                        {l.logo}
+                                    </span>
+                                    <span className="text-[13px] font-semibold text-text-primary whitespace-nowrap">{l.model}</span>
+                                </div>
+                            </td>
+                            {isStt ? (
+                                <td className="px-4 py-3.5 text-right text-[13.5px] font-semibold text-text-primary tabular-nums">
+                                    {fmtAudio(l.audioSeconds)}
+                                </td>
+                            ) : (
+                                <>
+                                    <td className="px-4 py-3.5 text-right text-[13.5px] font-semibold text-text-primary tabular-nums">
+                                        {l.input.toLocaleString()}
+                                    </td>
+                                    <td className="px-4 py-3.5 text-right text-[13.5px] font-semibold text-text-primary tabular-nums">
+                                        {l.output.toLocaleString()}
+                                    </td>
+                                </>
+                            )}
+                            <td className="px-4 py-3.5 text-right text-[12.5px] font-medium text-text-secondary tabular-nums whitespace-nowrap">
+                                {isStt ? `${l.rAudio}×/s` : `${l.rIn}× / ${l.rOut}×`}
+                            </td>
+                            <td className="px-6 py-3.5 text-right text-[14px] font-bold text-accent-primary tabular-nums">
+                                {l.credits.toLocaleString()}
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
+};
+
+/** Per-meeting detail: usage grouped by category (LLM / STT / Embedding), each broken down
+ *  per model with its credit rate and credits consumed, plus a meeting grand total. */
 export const UsageDetailView: React.FC<UsageDetailViewProps> = ({ usage, onBack }) => {
     const { t } = useTranslation();
     const tot = meetingTotals(usage);
@@ -295,54 +388,11 @@ export const UsageDetailView: React.FC<UsageDetailViewProps> = ({ usage, onBack 
                 <p className="text-[12.5px] text-text-tertiary tabular-nums mt-1">{usage.when}</p>
             </div>
             <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                    <thead>
-                        <tr className="bg-bg-input border-b border-border-subtle">
-                            <th className={`${thCls} text-left px-6`}>{t('account.planUsage.thModel')}</th>
-                            <th className={`${thCls} text-right px-4`}>{t('account.planUsage.thInput')}</th>
-                            <th className={`${thCls} text-right px-4`}>{t('account.planUsage.thOutput')}</th>
-                            <th className={`${thCls} text-right px-4`}>{t('account.planUsage.thRate')}</th>
-                            <th className={`${thCls} text-right px-6`}>{t('account.planUsage.thCredits')}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {usage.models.map((l, i) => (
-                            <tr key={l.org + l.model + i} className="border-b border-border-subtle">
-                                <td className="px-6 py-4">
-                                    <div className="flex items-center gap-2.5">
-                                        <span className="w-[26px] h-[26px] rounded-lg bg-bg-component text-[10px] font-extrabold text-text-secondary grid place-items-center shrink-0">
-                                            {l.logo}
-                                        </span>
-                                        <span className="text-[13px] font-semibold text-text-primary whitespace-nowrap">
-                                            <span className="text-text-tertiary font-medium">{l.org}</span>{l.model}
-                                        </span>
-                                    </div>
-                                </td>
-                                <td className="px-4 py-4 text-right text-[13.5px] font-semibold text-text-primary tabular-nums">
-                                    {l.input.toLocaleString()}
-                                </td>
-                                <td className="px-4 py-4 text-right text-[13.5px] font-semibold text-text-primary tabular-nums">
-                                    {l.output.toLocaleString()}
-                                </td>
-                                <td className="px-4 py-4 text-right text-[12.5px] font-medium text-text-secondary tabular-nums whitespace-nowrap">
-                                    {l.rIn}× / {l.rOut}×
-                                </td>
-                                <td className="px-6 py-4 text-right text-[14px] font-bold text-accent-primary tabular-nums">
-                                    {l.credits.toLocaleString()}
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                    <tfoot>
-                        <tr className="bg-bg-input border-t border-border-muted">
-                            <td className="px-6 py-3.5 text-[12px] font-bold uppercase tracking-wider text-text-secondary">{t('account.planUsage.total')}</td>
-                            <td className="px-4 py-3.5 text-right text-[13.5px] font-bold text-text-primary tabular-nums">{tot.input.toLocaleString()}</td>
-                            <td className="px-4 py-3.5 text-right text-[13.5px] font-bold text-text-primary tabular-nums">{tot.output.toLocaleString()}</td>
-                            <td className="px-4 py-3.5" />
-                            <td className="px-6 py-3.5 text-right text-[15px] font-extrabold text-accent-primary tabular-nums">{tot.credits.toLocaleString()}</td>
-                        </tr>
-                    </tfoot>
-                </table>
+                {usage.kinds.map((g) => <KindSection key={g.kind} group={g} />)}
+                <div className="flex items-center justify-between bg-bg-input border-t border-border-muted px-6 py-3.5">
+                    <span className="text-[12px] font-bold uppercase tracking-wider text-text-secondary">{t('account.planUsage.total')}</span>
+                    <span className="text-[15px] font-extrabold text-accent-primary tabular-nums">{tot.credits.toLocaleString()} {t('account.planUsage.creditsUnit')}</span>
+                </div>
             </div>
             <p className="px-6 py-3.5 text-[12px] text-text-tertiary">{t('account.planUsage.creditFormula')}</p>
         </section>

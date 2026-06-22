@@ -1,4 +1,4 @@
-import { IEmbeddingProvider } from './IEmbeddingProvider';
+import { EmbedOpts, IEmbeddingProvider } from './IEmbeddingProvider';
 import { CloudClient } from '../../services/CloudClient';
 
 /**
@@ -18,18 +18,18 @@ export class CloudEmbeddingProvider implements IEmbeddingProvider {
     }
   }
 
-  async embed(text: string): Promise<number[]> {
-    const out = await this.embedBatch([text]);
+  async embed(text: string, opts?: EmbedOpts): Promise<number[]> {
+    const out = await this.embedBatch([text], opts);
     return out[0];
   }
 
-  async embedQuery(text: string): Promise<number[]> {
-    return this.embed(text);
+  async embedQuery(text: string, opts?: EmbedOpts): Promise<number[]> {
+    return this.embed(text, opts);
   }
 
-  async embedBatch(texts: string[]): Promise<number[][]> {
+  async embedBatch(texts: string[], opts?: EmbedOpts): Promise<number[][]> {
     if (texts.length === 0) return [];
-    const res = await CloudClient.getInstance().llmEmbeddings(texts);
+    const res = await CloudClient.getInstance().llmEmbeddings(texts, undefined, opts?.meetingId);
     return res.embeddings;
   }
 }

@@ -110,7 +110,8 @@ class SupabaseUsageRepo:
         def _q():
             res = (
                 self._db.table("usage_events")
-                .select("meeting_id, turn_id, model, input_tokens, output_tokens, credits, created_at")
+                .select("meeting_id, turn_id, kind, model, input_tokens, output_tokens, "
+                        "audio_seconds, credits, created_at")
                 .eq("user_id", user_id).gte("created_at", since)
                 .order("created_at", desc=True).execute()
             )
@@ -121,7 +122,8 @@ class SupabaseUsageRepo:
         def _q():
             res = (
                 self._db.table("usage_events")
-                .select("turn_id, model, input_tokens, output_tokens, credits, created_at")
+                .select("turn_id, kind, model, input_tokens, output_tokens, "
+                        "audio_seconds, credits, created_at")
                 .eq("user_id", user_id).eq("meeting_id", meeting_id)
                 .order("created_at", desc=False).execute()
             )

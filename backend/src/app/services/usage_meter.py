@@ -10,6 +10,16 @@ from .model_catalog import ModelSpec, Plan, credits_for
 from .usage_repo import UsageRepo
 
 
+def _kind_category(kind: str) -> str:
+    """Collapse the stored event `kind` into the user-facing usage category. chat/json are
+    both interactive LLM calls and share one "llm" bucket; STT and embeddings are their own."""
+    if kind == "stt":
+        return "stt"
+    if kind == "embeddings":
+        return "embedding"
+    return "llm"
+
+
 def _period_bounds(period: str, anchor_iso: str | None) -> tuple[str, str]:
     """Return (start, end) ISO strings for the current period. Calendar-month aligned
     to UTC when no explicit anchor; weekly is a rolling 7-day window from anchor/now."""
@@ -67,107 +77,117 @@ class UsageMeter:
         )
         return credits
 
+    def _aggregate_kinds(self, events: list[dict]) -> dict:
+        """Roll a flat list of usage events into category → model breakdowns plus grand totals.
+
+        Events are bucketed into "llm" (chat/json), "stt", and "embedding" categories; within
+        each, usage is summed per model. Stored (billed) `credits` are summed as-is; catalog
+        rates (`rate_input`/`rate_output` per 1k tokens, `rate_audio` per audio second) are
+        attached so the UI can explain how credits were derived. STT rows carry `audio_seconds`
+        and zero tokens; embedding rows carry input tokens. Returns a dict with grand totals
+        (`input_tokens`/`output_tokens`/`audio_seconds`/`credits`) and a `kinds` list, each
+        `{kind, input_tokens, output_tokens, audio_seconds, credits, models: [...]}`."""
+        cats: dict[str, dict[str, dict]] = {}
+        t_in = t_out = t_cr = 0
+        t_audio = 0.0
+        for e in events:
+            cat = _kind_category(e.get("kind") or "")
+            inp = int(e.get("input_tokens") or 0)
+            outp = int(e.get("output_tokens") or 0)
+            cr = int(e.get("credits") or 0)
+            aud = float(e.get("audio_seconds") or 0.0)
+            ml = cats.setdefault(cat, {}).setdefault(
+                e["model"],
+                {"input_tokens": 0, "output_tokens": 0, "audio_seconds": 0.0, "credits": 0},
+            )
+            ml["input_tokens"] += inp
+            ml["output_tokens"] += outp
+            ml["audio_seconds"] += aud
+            ml["credits"] += cr
+            t_in += inp
+            t_out += outp
+            t_audio += aud
+            t_cr += cr
+
+        kinds: list[dict] = []
+        for cat, models in cats.items():
+            model_lines, k_in, k_out, k_cr = [], 0, 0, 0
+            k_audio = 0.0
+            for model_id, ml in models.items():
+                spec = self._catalog.get(model_id)
+                model_lines.append({
+                    "model": model_id,
+                    "label": spec.label if spec else model_id,
+                    "input_tokens": ml["input_tokens"],
+                    "output_tokens": ml["output_tokens"],
+                    "audio_seconds": ml["audio_seconds"],
+                    "credits": ml["credits"],
+                    "rate_input": spec.credits_per_1k_input if spec else 0.0,
+                    "rate_output": spec.credits_per_1k_output if spec else 0.0,
+                    "rate_audio": spec.credits_per_audio_second if spec else 0.0,
+                })
+                k_in += ml["input_tokens"]
+                k_out += ml["output_tokens"]
+                k_audio += ml["audio_seconds"]
+                k_cr += ml["credits"]
+            model_lines.sort(key=lambda x: x["credits"], reverse=True)
+            kinds.append({
+                "kind": cat, "input_tokens": k_in, "output_tokens": k_out,
+                "audio_seconds": k_audio, "credits": k_cr, "models": model_lines,
+            })
+        kinds.sort(key=lambda x: x["credits"], reverse=True)
+        return {
+            "input_tokens": t_in, "output_tokens": t_out, "audio_seconds": t_audio,
+            "credits": t_cr, "kinds": kinds,
+        }
+
     async def meeting_usage(self, user_id: str) -> list[dict]:
-        """Per-meeting usage for the current billing period, broken down by model.
-        Events not tied to a meeting (meeting_id is null) are excluded. Per-model `credits`
-        sum the stored (billed) credits; `rate_input`/`rate_output` come from the catalog so
-        the UI can explain how credits were derived. Sorted by most-recent activity."""
+        """Per-meeting usage for the current billing period, broken down by category (LLM /
+        STT / embedding) then model. Events not tied to a meeting (meeting_id is null) are
+        excluded. Sorted by most-recent activity."""
         st = await self.status(user_id)
         events = await self._repo.list_events_since(user_id, st.period_start)
 
-        meetings: dict[str, dict] = {}
+        by_meeting: dict[str, dict] = {}
         for e in events:
             mid = e.get("meeting_id")
             if not mid:
                 continue
             created = e.get("created_at") or ""
-            m = meetings.setdefault(mid, {"meeting_id": mid, "last_used": created, "models": {}})
+            m = by_meeting.setdefault(mid, {"last_used": created, "events": []})
+            m["events"].append(e)
             if created > m["last_used"]:
                 m["last_used"] = created
-            ml = m["models"].setdefault(
-                e["model"], {"input_tokens": 0, "output_tokens": 0, "credits": 0}
-            )
-            ml["input_tokens"] += int(e.get("input_tokens") or 0)
-            ml["output_tokens"] += int(e.get("output_tokens") or 0)
-            ml["credits"] += int(e.get("credits") or 0)
 
         out: list[dict] = []
-        for m in meetings.values():
-            models, t_in, t_out, t_cr = [], 0, 0, 0
-            for model_id, ml in m["models"].items():
-                spec = self._catalog.get(model_id)
-                models.append({
-                    "model": model_id,
-                    "label": spec.label if spec else model_id,
-                    "input_tokens": ml["input_tokens"],
-                    "output_tokens": ml["output_tokens"],
-                    "credits": ml["credits"],
-                    "rate_input": spec.credits_per_1k_input if spec else 0.0,
-                    "rate_output": spec.credits_per_1k_output if spec else 0.0,
-                })
-                t_in += ml["input_tokens"]
-                t_out += ml["output_tokens"]
-                t_cr += ml["credits"]
-            models.sort(key=lambda x: x["credits"], reverse=True)
-            out.append({
-                "meeting_id": m["meeting_id"], "last_used": m["last_used"],
-                "input_tokens": t_in, "output_tokens": t_out, "credits": t_cr, "models": models,
-            })
+        for mid, m in by_meeting.items():
+            agg = self._aggregate_kinds(m["events"])
+            out.append({"meeting_id": mid, "last_used": m["last_used"], **agg})
         out.sort(key=lambda x: x["last_used"], reverse=True)
         return out
 
     async def meeting_turn_usage(self, user_id: str, meeting_id: str) -> dict:
         """One meeting's usage broken down per turn (one "turn" = one Q&A; a turn may span
-        several calls, e.g. intent classification + answer generation). Turns are keyed by
-        `turn_id`; calls not tied to a turn (e.g. post-meeting summary) land under turn_id=null
-        so the UI can surface them as a "system/other" bucket. Also returns meeting grand totals."""
+        several calls, e.g. intent classification + answer generation), then by category and
+        model. Turns are keyed by `turn_id`; calls not tied to a turn (post-meeting summary,
+        STT, embeddings) land under turn_id=null so the UI can surface them as a "system/other"
+        bucket. Also returns meeting grand totals."""
         events = await self._repo.events_for_meeting(user_id, meeting_id)
 
-        turns: dict[str | None, dict] = {}
-        t_in = t_out = t_cr = 0
+        by_turn: dict[str | None, list[dict]] = {}
         for e in events:
-            tid = e.get("turn_id")
-            tr = turns.setdefault(tid, {"turn_id": tid, "calls": 0, "models": {}})
-            tr["calls"] += 1
-            ml = tr["models"].setdefault(
-                e["model"], {"input_tokens": 0, "output_tokens": 0, "credits": 0}
-            )
-            inp = int(e.get("input_tokens") or 0)
-            out = int(e.get("output_tokens") or 0)
-            cr = int(e.get("credits") or 0)
-            ml["input_tokens"] += inp
-            ml["output_tokens"] += out
-            ml["credits"] += cr
-            t_in += inp
-            t_out += out
-            t_cr += cr
+            by_turn.setdefault(e.get("turn_id"), []).append(e)
 
         turn_list: list[dict] = []
-        for tr in turns.values():
-            models, ti, to, tc = [], 0, 0, 0
-            for model_id, ml in tr["models"].items():
-                spec = self._catalog.get(model_id)
-                models.append({
-                    "model": model_id,
-                    "label": spec.label if spec else model_id,
-                    "input_tokens": ml["input_tokens"],
-                    "output_tokens": ml["output_tokens"],
-                    "credits": ml["credits"],
-                    "rate_input": spec.credits_per_1k_input if spec else 0.0,
-                    "rate_output": spec.credits_per_1k_output if spec else 0.0,
-                })
-                ti += ml["input_tokens"]
-                to += ml["output_tokens"]
-                tc += ml["credits"]
-            models.sort(key=lambda x: x["credits"], reverse=True)
-            turn_list.append({
-                "turn_id": tr["turn_id"], "calls": tr["calls"],
-                "input_tokens": ti, "output_tokens": to, "credits": tc, "models": models,
-            })
+        for tid, turn_events in by_turn.items():
+            agg = self._aggregate_kinds(turn_events)
+            turn_list.append({"turn_id": tid, "calls": len(turn_events), **agg})
 
+        grand = self._aggregate_kinds(events)
         return {
             "meeting_id": meeting_id,
-            "input_tokens": t_in, "output_tokens": t_out, "credits": t_cr,
+            "input_tokens": grand["input_tokens"], "output_tokens": grand["output_tokens"],
+            "audio_seconds": grand["audio_seconds"], "credits": grand["credits"],
             "turns": turn_list,
         }
 

@@ -10,6 +10,7 @@ import { EventEmitter } from 'events';
 import WebSocket from 'ws';
 import { RECOGNITION_LANGUAGES } from '../config/languages';
 import { CloudClient } from '../services/CloudClient';
+import { ActiveMeeting } from '../services/ActiveMeeting';
 
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 30000;
@@ -109,6 +110,10 @@ export class DeepgramStreamingSTT extends EventEmitter {
                 interim_results: 'true',
             });
             if (this.languageCode && this.languageCode !== 'en') qs.set('language', this.languageCode);
+            // Attribute STT usage to the active meeting so its credits show in per-meeting
+            // Usage Details. Null (no active meeting) → recorded unattributed, as before.
+            const meetingId = ActiveMeeting.get();
+            if (meetingId) qs.set('meeting_id', meetingId);
 
             const ws = new WebSocket(`${cloud.wsBaseUrl}/llm/stt?${qs.toString()}`);
             this.ws = ws;

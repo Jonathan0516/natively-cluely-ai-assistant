@@ -44,7 +44,9 @@ def test_usage_groups_events_by_meeting(client, usage_repo):
     assert m["input_tokens"] == 3000
     assert m["output_tokens"] == 1500
     assert m["credits"] == 23
-    by_model = {x["model"]: x for x in m["models"]}
+    by_kind = {k["kind"]: k for k in m["kinds"]}
+    assert set(by_kind) == {"llm"}
+    by_model = {x["model"]: x for x in by_kind["llm"]["models"]}
     assert set(by_model) == {"gemini-2.5-pro", "gemini-2.5-flash-lite"}
     assert by_model["gemini-2.5-pro"]["rate_input"] == 5.0
 

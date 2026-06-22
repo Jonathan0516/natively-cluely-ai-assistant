@@ -56,6 +56,9 @@ async def llm_stt(
     qp = websocket.query_params
     sample_rate = int(qp.get("sample_rate", "16000"))
     channels = int(qp.get("channels", "1"))
+    # Optional meeting this stream belongs to, so STT credits show per meeting. STT is
+    # continuous (not a discrete Q&A), so it is attributed at meeting level only — no turn_id.
+    meeting_id = qp.get("meeting_id") or None
     params = {
         "encoding": qp.get("encoding", "linear16"),
         "sample_rate": str(sample_rate),
@@ -101,6 +104,7 @@ async def llm_stt(
             await upstream.close()
         secs = audio_seconds_for(total_bytes, sample_rate, channels)
         if secs > 0:
-            await meter.record(user.id, kind="stt", spec=spec, usage=Usage(), audio_seconds=secs)
+            await meter.record(user.id, kind="stt", spec=spec, usage=Usage(),
+                               audio_seconds=secs, meeting_id=meeting_id)
         with contextlib.suppress(Exception):
             await websocket.close()

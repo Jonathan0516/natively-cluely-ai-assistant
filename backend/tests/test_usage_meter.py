@@ -93,15 +93,23 @@ async def test_stt_min_one_credit():
     assert credits == 1
 
 
-async def test_meeting_usage_groups_by_meeting_and_model():
+def _kinds_by_kind(container: dict) -> dict:
+    return {k["kind"]: k for k in container["kinds"]}
+
+
+async def test_meeting_usage_groups_by_kind_then_model():
     repo = InMemoryUsageRepo()
     meter = UsageMeter(repo, CATALOG, PLANS)
-    # Two models used in meeting m1 (a mid-meeting switch), one model in m2,
-    # and one event with no meeting (must be excluded).
+    # Meeting m1 mixes all three categories: two LLM models (a mid-meeting switch),
+    # embeddings, and STT. m2 is LLM only. One event has no meeting (must be excluded).
     await repo.record_event("u1", kind="chat", model="gemini-2.5-pro",
                             input_tokens=1000, output_tokens=1000, credits=20, meeting_id="m1")
-    await repo.record_event("u1", kind="chat", model="gemini-2.5-flash-lite",
+    await repo.record_event("u1", kind="json", model="gemini-2.5-flash-lite",
                             input_tokens=500, output_tokens=500, credits=2, meeting_id="m1")
+    await repo.record_event("u1", kind="embeddings", model="embed-default",
+                            input_tokens=5000, output_tokens=0, credits=1, meeting_id="m1")
+    await repo.record_event("u1", kind="stt", model="stt-default",
+                            audio_seconds=100.0, credits=10, meeting_id="m1")
     await repo.record_event("u1", kind="chat", model="gemini-2.5-flash-lite",
                             input_tokens=300, output_tokens=100, credits=1, meeting_id="m2")
     await repo.record_event("u1", kind="chat", model="gemini-2.5-flash-lite",
@@ -112,22 +120,41 @@ async def test_meeting_usage_groups_by_meeting_and_model():
     by_id = {r["meeting_id"]: r for r in rows}
 
     m1 = by_id["m1"]
-    assert m1["input_tokens"] == 1500
+    assert m1["input_tokens"] == 6500       # 1000+500+5000
     assert m1["output_tokens"] == 1500
-    assert m1["credits"] == 22
-    assert {m["model"] for m in m1["models"]} == {"gemini-2.5-pro", "gemini-2.5-flash-lite"}
-    pro = next(m for m in m1["models"] if m["model"] == "gemini-2.5-pro")
+    assert m1["audio_seconds"] == 100.0
+    assert m1["credits"] == 33              # 20+2+1+10
+
+    kinds = _kinds_by_kind(m1)
+    assert set(kinds) == {"llm", "embedding", "stt"}
+
+    llm = kinds["llm"]
+    assert llm["credits"] == 22
+    assert {m["model"] for m in llm["models"]} == {"gemini-2.5-pro", "gemini-2.5-flash-lite"}
+    pro = next(m for m in llm["models"] if m["model"] == "gemini-2.5-pro")
     assert pro["credits"] == 20
     assert pro["rate_input"] == CATALOG["gemini-2.5-pro"].credits_per_1k_input
     assert pro["rate_output"] == CATALOG["gemini-2.5-pro"].credits_per_1k_output
 
+    emb = kinds["embedding"]
+    assert emb["input_tokens"] == 5000
+    assert emb["credits"] == 1
+    assert emb["models"][0]["rate_input"] == CATALOG["embed-default"].credits_per_1k_input
+
+    stt = kinds["stt"]
+    assert stt["audio_seconds"] == 100.0
+    assert stt["credits"] == 10
+    assert stt["models"][0]["audio_seconds"] == 100.0
+    assert stt["models"][0]["rate_audio"] == CATALOG["stt-default"].credits_per_audio_second
+
     assert by_id["m2"]["credits"] == 1
 
 
-async def test_meeting_turn_usage_groups_by_turn():
+async def test_meeting_turn_usage_groups_by_turn_and_kind():
     repo = InMemoryUsageRepo()
     meter = UsageMeter(repo, CATALOG, PLANS)
-    # Turn t1 spans two calls (intent + answer); turn t2 one call; one untied call (no turn).
+    # Turn t1 spans two LLM calls (intent + answer); turn t2 one LLM call. STT and embeddings
+    # are continuous/meeting-level (no turn_id) → they bucket under the null "system" turn.
     await repo.record_event("u1", kind="json", model="gemini-2.5-flash-lite",
                             input_tokens=300, output_tokens=20, credits=1,
                             meeting_id="m1", turn_id="t1")
@@ -137,19 +164,27 @@ async def test_meeting_turn_usage_groups_by_turn():
     await repo.record_event("u1", kind="chat", model="gemini-2.5-pro",
                             input_tokens=1000, output_tokens=1000, credits=20,
                             meeting_id="m1", turn_id="t2")
-    await repo.record_event("u1", kind="chat", model="gemini-2.5-flash-lite",
-                            input_tokens=200, output_tokens=10, credits=1,
-                            meeting_id="m1")  # no turn → system bucket
+    await repo.record_event("u1", kind="embeddings", model="embed-default",
+                            input_tokens=2000, output_tokens=0, credits=1, meeting_id="m1")
+    await repo.record_event("u1", kind="stt", model="stt-default",
+                            audio_seconds=50.0, credits=5, meeting_id="m1")
 
     res = await meter.meeting_turn_usage("u1", "m1")
     assert res["meeting_id"] == "m1"
-    assert res["credits"] == 25            # 1+3+20+1
-    assert res["input_tokens"] == 6500     # 300+5000+1000+200
+    assert res["credits"] == 30            # 1+3+20+1+5
+    assert res["input_tokens"] == 8300     # 300+5000+1000+2000
+    assert res["audio_seconds"] == 50.0
+
     by_turn = {t["turn_id"]: t for t in res["turns"]}
     assert by_turn["t1"]["calls"] == 2
     assert by_turn["t1"]["input_tokens"] == 5300
     assert by_turn["t1"]["credits"] == 4
+    t1_kinds = _kinds_by_kind(by_turn["t1"])
+    assert set(t1_kinds) == {"llm"}
     assert by_turn["t2"]["credits"] == 20
-    assert by_turn["t2"]["models"][0]["rate_output"] == CATALOG["gemini-2.5-pro"].credits_per_1k_output
-    assert None in by_turn                  # untied calls bucketed under null turn
-    assert by_turn[None]["credits"] == 1
+
+    assert None in by_turn                  # STT + embeddings bucketed under the null turn
+    sys_kinds = _kinds_by_kind(by_turn[None])
+    assert set(sys_kinds) == {"stt", "embedding"}
+    assert sys_kinds["stt"]["audio_seconds"] == 50.0
+    assert sys_kinds["embedding"]["credits"] == 1

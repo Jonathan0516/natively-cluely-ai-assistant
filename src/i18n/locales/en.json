@@ -284,6 +284,9 @@
       "output": "Output",
       "cost": "Cost",
       "credits": "Credits",
+      "byType": "By Type",
+      "type": "Type",
+      "usage": "Usage (in/out or audio)",
       "byQuestion": "Per Q&A",
       "question": "Q&A",
       "systemOther": "System / summary",
@@ -1282,13 +1285,20 @@
       "thOutput": "Output",
       "thCredits": "Credits",
       "thRate": "Rate (in/out)",
+      "thAudio": "Audio",
       "thAction": "Action",
+      "creditsUnit": "credits",
+      "kind": {
+        "llm": "LLM / Q&A",
+        "stt": "Speech-to-Text",
+        "embedding": "Embeddings"
+      },
       "detail": "Detail",
       "back": "Back",
       "total": "Total",
       "untitledMeeting": "Untitled meeting",
       "noUsage": "No usage recorded this cycle yet.",
-      "creditFormula": "Credits = tokens ÷ 1,000 × rate (per model, input and output rated separately)."
+      "creditFormula": "Credits = tokens ÷ 1,000 × rate (LLM/embeddings); STT = audio seconds × rate."
     }
   },
   "auth": {

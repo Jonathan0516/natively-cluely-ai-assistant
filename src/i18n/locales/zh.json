@@ -284,6 +284,9 @@
       "output": "输出",
       "cost": "花费",
       "credits": "额度",
+      "byType": "按类型",
+      "type": "类型",
+      "usage": "用量（输入/输出 或 音频）",
       "byQuestion": "按问答",
       "question": "问答",
       "systemOther": "系统 / 总结",
@@ -1283,13 +1286,20 @@
       "thOutput": "输出",
       "thCredits": "额度",
       "thRate": "倍率 (输入/输出)",
+      "thAudio": "音频",
       "thAction": "操作",
+      "creditsUnit": "额度",
+      "kind": {
+        "llm": "大模型 / 问答",
+        "stt": "语音转写",
+        "embedding": "向量嵌入"
+      },
       "detail": "详情",
       "back": "返回",
       "total": "合计",
       "untitledMeeting": "未命名会议",
       "noUsage": "本周期暂无用量记录。",
-      "creditFormula": "额度 = Token 数 ÷ 1000 × 倍率（每个模型的输入、输出分别计费）。"
+      "creditFormula": "额度 = Token 数 ÷ 1000 × 倍率（大模型/嵌入）；语音转写 = 音频秒数 × 倍率。"
     }
   },
   "auth": {

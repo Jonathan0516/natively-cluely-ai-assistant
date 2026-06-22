@@ -583,7 +583,24 @@ ${meeting.detailedSummary.keyPoints?.map(item => `- ${item}`).join('\n') || 'Non
                                         );
                                     }
                                     const fmtNum = (n: number) => n.toLocaleString();
+                                    const fmtAudio = (sec: number) => {
+                                        const s = Math.round(sec);
+                                        return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+                                    };
                                     const cardCls = `rounded-xl border p-4 ${isLight ? 'bg-white border-black/[0.06]' : 'bg-[#1A1A1C] border-white/[0.08]'}`;
+
+                                    // Roll all turns up into per-category (LLM / STT / Embedding) totals so the
+                                    // meeting's transcription + embedding cost is visible, not just Q&A.
+                                    const kindAgg = new Map<string, { input: number; output: number; audio: number; credits: number }>();
+                                    for (const tn of mu.turns) {
+                                        for (const k of tn.kinds) {
+                                            const cur = kindAgg.get(k.kind) || { input: 0, output: 0, audio: 0, credits: 0 };
+                                            cur.input += k.input_tokens; cur.output += k.output_tokens;
+                                            cur.audio += k.audio_seconds; cur.credits += k.credits;
+                                            kindAgg.set(k.kind, cur);
+                                        }
+                                    }
+                                    const kindRows = [...kindAgg.entries()].sort((a, b) => b[1].credits - a[1].credits);
 
                                     // Join each Q&A interaction to its turn usage; collect unmatched turns
                                     // (incl. the null-turn bucket = system/summary calls) into "other".
@@ -621,6 +638,35 @@ ${meeting.detailedSummary.keyPoints?.map(item => `- ${item}`).join('\n') || 'Non
                                                         <div className="text-xs text-text-tertiary uppercase tracking-wider mb-1">{t('meetingDetails.analysis.credits')}</div>
                                                         <div className="text-2xl font-semibold text-accent-primary tabular-nums">{fmtNum(mu.credits)}</div>
                                                     </div>
+                                                </div>
+                                            </section>
+
+                                            {/* By category: LLM / STT / Embedding */}
+                                            <section>
+                                                <h2 className="text-lg font-semibold text-text-primary mb-4">{t('meetingDetails.analysis.byType')}</h2>
+                                                <div className={`rounded-xl border overflow-hidden ${isLight ? 'border-black/[0.06]' : 'border-white/[0.08]'}`}>
+                                                    <table className="w-full text-sm">
+                                                        <thead className={isLight ? 'bg-[#F5F5F7] text-text-secondary' : 'bg-[#1A1A1C] text-text-tertiary'}>
+                                                            <tr>
+                                                                <th className="text-left px-4 py-2 font-medium text-xs uppercase tracking-wider">{t('meetingDetails.analysis.type')}</th>
+                                                                <th className="text-right px-4 py-2 font-medium text-xs uppercase tracking-wider">{t('meetingDetails.analysis.usage')}</th>
+                                                                <th className="text-right px-4 py-2 font-medium text-xs uppercase tracking-wider">{t('meetingDetails.analysis.credits')}</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {kindRows.map(([kind, v]) => (
+                                                                <tr key={kind} className={isLight ? 'border-t border-black/[0.04]' : 'border-t border-white/[0.04]'}>
+                                                                    <td className="px-4 py-2.5 text-text-primary">{t(`account.planUsage.kind.${kind}`)}</td>
+                                                                    <td className="px-4 py-2.5 text-right text-text-secondary tabular-nums">
+                                                                        {kind === 'stt'
+                                                                            ? fmtAudio(v.audio)
+                                                                            : `${fmtNum(v.input)} / ${fmtNum(v.output)}`}
+                                                                    </td>
+                                                                    <td className="px-4 py-2.5 text-right text-accent-primary font-medium tabular-nums">{fmtNum(v.credits)}</td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
                                                 </div>
                                             </section>
 

@@ -71,15 +71,24 @@ const AccountView: React.FC<AccountViewProps> = ({ phone, onSignOut }) => {
           id: r.meeting_id,
           meeting: titleById.get(r.meeting_id) || t("account.planUsage.untitledMeeting"),
           when: fmtWhen(r.last_used),
-          models: r.models.map((m) => ({
-            logo: logoFor(m.label),
-            org: "",
-            model: m.label,
-            input: m.input_tokens,
-            output: m.output_tokens,
-            rIn: m.rate_input,
-            rOut: m.rate_output,
-            credits: m.credits,
+          kinds: r.kinds.map((k) => ({
+            kind: k.kind,
+            input: k.input_tokens,
+            output: k.output_tokens,
+            audioSeconds: k.audio_seconds,
+            credits: k.credits,
+            models: k.models.map((m) => ({
+              logo: logoFor(m.label),
+              org: "",
+              model: m.label,
+              input: m.input_tokens,
+              output: m.output_tokens,
+              audioSeconds: m.audio_seconds,
+              rIn: m.rate_input,
+              rOut: m.rate_output,
+              rAudio: m.rate_audio,
+              credits: m.credits,
+            })),
           })),
         }))
       setUsage(mapped)

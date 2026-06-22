@@ -16,6 +16,18 @@ import { AuthStorage, StoredAuth } from "../AuthStorage"
 const DEFAULT_BACKEND = "http://localhost:8765"
 const REFRESH_LEAD_SECONDS = 60
 
+// One usage category (LLM / STT / embedding) within a meeting or turn, broken down per model.
+interface UsageModelLine {
+  model: string; label: string
+  input_tokens: number; output_tokens: number; audio_seconds: number; credits: number
+  rate_input: number; rate_output: number; rate_audio: number
+}
+interface UsageKindLine {
+  kind: 'llm' | 'stt' | 'embedding'
+  input_tokens: number; output_tokens: number; audio_seconds: number; credits: number
+  models: UsageModelLine[]
+}
+
 function backendUrl(): string {
   const raw = process.env.NATIVELY_BACKEND_URL || process.env.VITE_AUTH_BACKEND_URL || DEFAULT_BACKEND
   return raw.replace(/\/$/, "")
@@ -251,12 +263,17 @@ export class CloudClient {
   // LLM gateway (metered, platform-held Gemini key)                       //
   // --------------------------------------------------------------------- //
 
-  /** Compute embeddings on the backend (platform Gemini key, metered). */
+  /** Compute embeddings on the backend (platform Gemini key, metered). `meetingId` attributes
+   *  the usage to a meeting so embedding credits show in per-meeting Usage Details. */
   async llmEmbeddings(
     texts: string[],
     model?: string,
+    meetingId?: string | null,
   ): Promise<{ embeddings: number[][]; dim: number; model: string }> {
-    return this.post(`/llm/embeddings`, model ? { texts, model } : { texts })
+    const body: { texts: string[]; model?: string; meeting_id?: string } = { texts }
+    if (model) body.model = model
+    if (meetingId) body.meeting_id = meetingId
+    return this.post(`/llm/embeddings`, body)
   }
 
   /** Stream chat tokens from the backend gateway (SSE). Yields text deltas. */
@@ -342,48 +359,36 @@ export class CloudClient {
     }>>(`/llm/models`)
   }
 
-  /** Per-meeting usage (current period): token usage + credits, broken down by model. */
+  /** Per-meeting usage (current period): token/audio usage + credits, grouped by category
+   *  (LLM / STT / embedding) then model. */
   getLlmUsage() {
     return this.get<Array<{
       meeting_id: string
       last_used: string
       input_tokens: number
       output_tokens: number
+      audio_seconds: number
       credits: number
-      models: Array<{
-        model: string
-        label: string
-        input_tokens: number
-        output_tokens: number
-        credits: number
-        rate_input: number
-        rate_output: number
-      }>
+      kinds: UsageKindLine[]
     }>>(`/llm/usage`)
   }
 
-  /** One meeting's usage broken down per turn (Q&A) and per model. */
+  /** One meeting's usage broken down per turn (Q&A), then by category and model. */
   getMeetingUsage(meetingId: string) {
     return this.get<{
       meeting_id: string
       input_tokens: number
       output_tokens: number
+      audio_seconds: number
       credits: number
       turns: Array<{
         turn_id: string | null
         calls: number
         input_tokens: number
         output_tokens: number
+        audio_seconds: number
         credits: number
-        models: Array<{
-          model: string
-          label: string
-          input_tokens: number
-          output_tokens: number
-          credits: number
-          rate_input: number
-          rate_output: number
-        }>
+        kinds: UsageKindLine[]
       }>
     }>(`/llm/usage/meeting/${encodeURIComponent(meetingId)}`)
   }

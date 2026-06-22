@@ -35,6 +35,20 @@ def test_stt_relays_transcripts_and_meters(client, jwt_svc, usage_repo, test_use
     assert stt and stt[0]["credits"] >= 1
 
 
+def test_stt_attributes_usage_to_meeting(client, jwt_svc, usage_repo, test_user):
+    token = jwt_svc.issue(test_user.id, test_user.phone).access_token
+    url = f"/llm/stt?token={token}&sample_rate=16000&channels=1&meeting_id=m-stt"
+    with client.websocket_connect(url) as ws:
+        ws.receive_text()
+        ws.send_bytes(b"\x00" * 32000)      # 1.0s of linear16 mono audio
+    for _ in range(50):
+        if any(e["kind"] == "stt" for e in usage_repo._events):
+            break
+        time.sleep(0.02)
+    stt = [e for e in usage_repo._events if e["kind"] == "stt"]
+    assert stt and stt[-1]["meeting_id"] == "m-stt"
+
+
 def test_stt_quota_exhausted_closes_4029(client, jwt_svc, usage_repo, test_user):
     token = jwt_svc.issue(test_user.id, test_user.phone).access_token
     # pre-seed exhausted usage within the current period (future ts so credits_used_since counts it)

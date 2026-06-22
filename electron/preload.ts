@@ -1,5 +1,17 @@
 import { contextBridge, ipcRenderer } from "electron"
 
+// One usage category (LLM / STT / embedding) within a meeting or turn, broken down per model.
+interface UsageModelLine {
+  model: string; label: string;
+  input_tokens: number; output_tokens: number; audio_seconds: number; credits: number;
+  rate_input: number; rate_output: number; rate_audio: number;
+}
+interface UsageKindLine {
+  kind: 'llm' | 'stt' | 'embedding';
+  input_tokens: number; output_tokens: number; audio_seconds: number; credits: number;
+  models: UsageModelLine[];
+}
+
 // Types for the exposed Electron API
 interface ElectronAPI {
   updateContentDimensions: (dimensions: {
@@ -151,8 +163,8 @@ interface ElectronAPI {
   getMeetingActive: () => Promise<boolean>
   getLlmQuota: () => Promise<{ plan: string; period_start: string; period_end: string; credits_total: number; credits_used: number; credits_remaining: number }>
   getLlmModels: () => Promise<Array<{ id: string; label: string; tier: string; capabilities: string[]; available: boolean; latency_hint?: string; reasoning?: 'graded' | 'binary' | 'none' }>>
-  getLlmUsage: () => Promise<Array<{ meeting_id: string; last_used: string; input_tokens: number; output_tokens: number; credits: number; models: Array<{ model: string; label: string; input_tokens: number; output_tokens: number; credits: number; rate_input: number; rate_output: number }> }>>
-  getMeetingUsage: (meetingId: string) => Promise<{ meeting_id: string; input_tokens: number; output_tokens: number; credits: number; turns: Array<{ turn_id: string | null; calls: number; input_tokens: number; output_tokens: number; credits: number; models: Array<{ model: string; label: string; input_tokens: number; output_tokens: number; credits: number; rate_input: number; rate_output: number }> }> }>
+  getLlmUsage: () => Promise<Array<{ meeting_id: string; last_used: string; input_tokens: number; output_tokens: number; audio_seconds: number; credits: number; kinds: UsageKindLine[] }>>
+  getMeetingUsage: (meetingId: string) => Promise<{ meeting_id: string; input_tokens: number; output_tokens: number; audio_seconds: number; credits: number; turns: Array<{ turn_id: string | null; calls: number; input_tokens: number; output_tokens: number; audio_seconds: number; credits: number; kinds: UsageKindLine[] }> }>
   onMeetingStateChanged: (callback: (data: { isActive: boolean }) => void) => () => void
   onQuotaExhausted: (callback: (data: { source: 'chat' | 'json' | 'stt'; message?: string }) => void) => () => void
   onWindowMaximizedChanged: (callback: (isMaximized: boolean) => void) => () => void

@@ -11,6 +11,7 @@ import { VectorStore } from './VectorStore';
 import { EmbeddingProviderResolver } from './EmbeddingProviderResolver';
 import { IEmbeddingProvider } from './providers/IEmbeddingProvider';
 import { LocalEmbeddingProvider } from './providers/LocalEmbeddingProvider';
+import { ActiveMeeting } from '../services/ActiveMeeting';
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_BASE_MS = 2000;
@@ -89,14 +90,17 @@ export class EmbeddingPipeline {
         return this.provider?.name;
     }
 
-    async getEmbedding(text: string): Promise<number[]> {
+    // Live indexing and query embeds run during an active meeting, so attribute their usage to
+    // it by default (callers may override). Post-meeting batch embedding passes its own id via
+    // embedMeeting → embedWithRetry. meetingId resolves to null when no meeting is active.
+    async getEmbedding(text: string, meetingId: string | null = ActiveMeeting.get()): Promise<number[]> {
         if (!this.provider) throw new Error('Embedding provider not initialized');
-        return this.provider.embed(text);
+        return this.provider.embed(text, { meetingId });
     }
 
-    async getEmbeddingForQuery(text: string): Promise<number[]> {
+    async getEmbeddingForQuery(text: string, meetingId: string | null = ActiveMeeting.get()): Promise<number[]> {
         if (!this.provider) throw new Error('Embedding provider not initialized');
-        return this.provider.embedQuery(text);
+        return this.provider.embedQuery(text, { meetingId });
     }
 
     /** Queue a meeting for embedding (called when a meeting ends / is reprocessed). */
@@ -135,7 +139,7 @@ export class EmbeddingPipeline {
         const chunks = this.vectorStore.getChunksWithoutEmbeddings(meetingId);
         for (const chunk of chunks) {
             try {
-                const embedding = await this.embedWithRetry(chunk.text, provider);
+                const embedding = await this.embedWithRetry(chunk.text, provider, meetingId);
                 await this.vectorStore.storeEmbedding(chunk.id, embedding);
             } catch (err) {
                 if (!useFallback && this.fallbackProvider) {
@@ -151,7 +155,7 @@ export class EmbeddingPipeline {
         const summaryText = this.vectorStore.getSummaryText(meetingId);
         if (summaryText) {
             try {
-                const embedding = await this.embedWithRetry(summaryText, provider);
+                const embedding = await this.embedWithRetry(summaryText, provider, meetingId);
                 await this.vectorStore.storeSummaryEmbedding(meetingId, embedding);
             } catch (err) {
                 console.error(`[EmbeddingPipeline] Failed to embed summary for ${meetingId}:`, err);
@@ -162,11 +166,11 @@ export class EmbeddingPipeline {
         console.log(`[EmbeddingPipeline] Embedded meeting ${meetingId} via ${provider.name}`);
     }
 
-    private async embedWithRetry(text: string, provider: IEmbeddingProvider): Promise<number[]> {
+    private async embedWithRetry(text: string, provider: IEmbeddingProvider, meetingId?: string): Promise<number[]> {
         let lastErr: any;
         for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
             try {
-                return await provider.embed(text);
+                return await provider.embed(text, { meetingId });
             } catch (err) {
                 lastErr = err;
                 if (attempt < MAX_RETRIES - 1) {

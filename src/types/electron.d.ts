@@ -1,3 +1,16 @@
+// One usage category (LLM / STT / embedding) within a meeting or turn, broken down per model.
+// STT rows carry audio_seconds + rate_audio (no tokens); LLM/embedding rows carry tokens.
+export interface UsageModelLine {
+  model: string; label: string;
+  input_tokens: number; output_tokens: number; audio_seconds: number; credits: number;
+  rate_input: number; rate_output: number; rate_audio: number;
+}
+export interface UsageKindLine {
+  kind: 'llm' | 'stt' | 'embedding';
+  input_tokens: number; output_tokens: number; audio_seconds: number; credits: number;
+  models: UsageModelLine[];
+}
+
 export interface ElectronAPI {
   updateContentDimensions: (dimensions: {
     width: number
@@ -50,8 +63,8 @@ export interface ElectronAPI {
   getMeetingActive: () => Promise<boolean>
   getLlmQuota: () => Promise<{ plan: string; period_start: string; period_end: string; credits_total: number; credits_used: number; credits_remaining: number }>
   getLlmModels: () => Promise<Array<{ id: string; label: string; tier: string; capabilities: string[]; available: boolean; latency_hint?: string; reasoning?: 'graded' | 'binary' | 'none'; price_in?: number; price_out?: number }>>
-  getLlmUsage: () => Promise<Array<{ meeting_id: string; last_used: string; input_tokens: number; output_tokens: number; credits: number; models: Array<{ model: string; label: string; input_tokens: number; output_tokens: number; credits: number; rate_input: number; rate_output: number }> }>>
-  getMeetingUsage: (meetingId: string) => Promise<{ meeting_id: string; input_tokens: number; output_tokens: number; credits: number; turns: Array<{ turn_id: string | null; calls: number; input_tokens: number; output_tokens: number; credits: number; models: Array<{ model: string; label: string; input_tokens: number; output_tokens: number; credits: number; rate_input: number; rate_output: number }> }> }>
+  getLlmUsage: () => Promise<Array<{ meeting_id: string; last_used: string; input_tokens: number; output_tokens: number; audio_seconds: number; credits: number; kinds: UsageKindLine[] }>>
+  getMeetingUsage: (meetingId: string) => Promise<{ meeting_id: string; input_tokens: number; output_tokens: number; audio_seconds: number; credits: number; turns: Array<{ turn_id: string | null; calls: number; input_tokens: number; output_tokens: number; audio_seconds: number; credits: number; kinds: UsageKindLine[] }> }>
   onMeetingStateChanged: (callback: (data: { isActive: boolean }) => void) => () => void
   onWindowMaximizedChanged: (callback: (isMaximized: boolean) => void) => () => void
   onEnsureExpanded: (callback: () => void) => () => void
