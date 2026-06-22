@@ -79,9 +79,9 @@ export class CredentialsManager {
         return this.credentials.aiResponseLanguage || 'auto';
     }
     public getDefaultModel(): string {
-        // Cloud-only: default is the gateway's fast tier (catalog id). Falls back here only
-        // when the user hasn't picked a model.
-        return this.credentials.defaultModel || 'gemini-2.5-flash-lite';
+        // Cloud-only: default is DeepSeek V4 Pro (catalog id). Falls back here only when the
+        // user hasn't picked a model. No fast/pro split — one default for every meeting.
+        return this.credentials.defaultModel || 'deepseek-v4-pro';
     }
 
     public getAllCredentials(): StoredCredentials {

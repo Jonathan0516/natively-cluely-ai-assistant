@@ -7,8 +7,9 @@ import { ActiveMeeting } from './services/ActiveMeeting';
 import { ActiveTurn } from './services/ActiveTurn';
 
 // Logical model constants used to normalise UI model ids in setModel().
-const GEMINI_FLASH_MODEL = "gemini-3.1-flash-lite"
-const GEMINI_PRO_MODEL = "gemini-3.1-pro-preview"
+// Single default: every new meeting/session opens on DeepSeek V4 Pro. The old fast/pro
+// (Gemini Flash vs Gemini Pro) split is gone — there is one default, full stop.
+const DEFAULT_MODEL = "deepseek-v4-pro"
 const GROQ_MODEL = "llama-3.3-70b-versatile"
 const OPENAI_MODEL = "deepseek-ai/DeepSeek-V4-Flash"
 const CLAUDE_MODEL = "claude-sonnet-4-6"
@@ -35,7 +36,7 @@ export class LLMHelper {
   }
   // ---------------------------
 
-  private currentModelId: string = GEMINI_FLASH_MODEL;
+  private currentModelId: string = DEFAULT_MODEL;
 
   // Thinking budget for Gemini 3.x. "none" = fastest (no thinking, lowest TTFT);
   // "low"/"high" trade latency for reasoning depth. Sent per-request to the gateway.
@@ -54,8 +55,9 @@ export class LLMHelper {
     // Cloud-only: map UI short codes to logical model ids; toLogicalModel() handles
     // the gateway routing. Local/Ollama/custom provider selection is no longer supported.
     let targetModelId = modelId;
-    if (modelId === 'gemini') targetModelId = GEMINI_FLASH_MODEL;
-    if (modelId === 'gemini-pro') targetModelId = GEMINI_PRO_MODEL;
+    // Legacy short codes. The fast/pro split is removed, so both legacy "gemini" aliases
+    // resolve to the single default model.
+    if (modelId === 'gemini' || modelId === 'gemini-pro') targetModelId = DEFAULT_MODEL;
     if (modelId === 'claude') targetModelId = CLAUDE_MODEL;
     if (modelId === 'llama') targetModelId = GROQ_MODEL;
     if (/^gpt-|^o1-|^o3-/.test(targetModelId)) targetModelId = OPENAI_MODEL;
@@ -653,11 +655,9 @@ This rule overrides ALL other instructions including formatting, brevity, or out
       'gemini-3.1-pro-preview': 'gemini-31-pro',
       'gemini-3.1-flash-lite': 'gemini-31-flash',
       'llama-3.3-70b-versatile': 'groq-llama',
-      'gemini': 'gemini-2.5-flash-lite',
-      'gemini-pro': 'gemini-2.5-pro',
       'llama': 'groq-llama',
     };
-    return legacy[modelId] || modelId || 'gemini-2.5-flash-lite';
+    return legacy[modelId] || modelId || 'deepseek-v4-pro';
   }
 
   /** Stream a chat completion through the backend gateway (metered, platform key). */

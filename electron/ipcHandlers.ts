@@ -2,7 +2,6 @@
 
 import { app, ipcMain, shell, dialog, desktopCapturer, systemPreferences, BrowserWindow, screen } from "electron"
 import { AppState } from "./main"
-import { GEMINI_FLASH_MODEL } from "./IntelligenceManager"
 import { DatabaseManager } from "./db/DatabaseManager"; // Import Database Manager
 import * as os from "os";
 import * as path from "path";
@@ -873,7 +872,7 @@ export function initializeIpcHandlers(appState: AppState): void {
       return { model: cm.getDefaultModel() };
     } catch (error: any) {
       console.error("Error getting default model:", error);
-      return { model: 'gemini-2.5-flash-lite' };
+      return { model: 'deepseek-v4-pro' };
     }
   });
 
