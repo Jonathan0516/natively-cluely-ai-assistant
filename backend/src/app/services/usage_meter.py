@@ -77,7 +77,9 @@ class UsageMeter:
         else:
             credits = credits_for(spec, usage.input_tokens, usage.output_tokens)
             if audio_seconds:
-                credits = max(credits, max(1, round(audio_seconds)))
+                # ×100 to match the 100-credits-per-CNY unit (1 credit = ¥0.01): the floor
+                # stays ≈ ¥1 per audio-second, same as before the rescale.
+                credits = max(credits, max(1, round(audio_seconds * 100)))
         await self._repo.record_event(
             user_id, kind=kind, model=spec.id,
             input_tokens=usage.input_tokens, output_tokens=usage.output_tokens,

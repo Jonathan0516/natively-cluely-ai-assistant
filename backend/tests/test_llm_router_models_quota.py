@@ -8,8 +8,8 @@ def test_models_lists_catalog_with_availability(client):
     assert by_id["gemini-2.5-pro"]["available"] is True
     assert "embed-default" not in by_id
     # Pricing is surfaced for the Model Library: credits per 1k input/output tokens.
-    assert by_id["gemini-2.5-pro"]["price_in"] == 5.0
-    assert by_id["gemini-2.5-pro"]["price_out"] == 15.0
+    assert by_id["gemini-2.5-pro"]["price_in"] == 500.0
+    assert by_id["gemini-2.5-pro"]["price_out"] == 1500.0
 
 
 def test_quota_returns_status_without_raising(client):
@@ -62,7 +62,7 @@ def test_usage_groups_events_by_meeting(client, usage_repo):
     assert set(by_kind) == {"llm"}
     by_model = {x["model"]: x for x in by_kind["llm"]["models"]}
     assert set(by_model) == {"gemini-2.5-pro", "gemini-2.5-flash-lite"}
-    assert by_model["gemini-2.5-pro"]["rate_input"] == 5.0
+    assert by_model["gemini-2.5-pro"]["rate_input"] == 500.0
 
 
 def test_usage_meeting_breaks_down_by_turn(client, usage_repo):

@@ -8,7 +8,7 @@ def test_packs_lists_three_tiers(client):
     assert resp.status_code == 200
     packs = {p["id"]: p for p in resp.json()}
     assert set(packs) == {"pack_s", "pack_m", "pack_l"}
-    assert packs["pack_s"] == {"id": "pack_s", "currency": "cny", "amount": 5000, "credits": 50}
+    assert packs["pack_s"] == {"id": "pack_s", "currency": "cny", "amount": 5000, "credits": 5000}
 
 
 def test_checkout_unknown_pack_is_400(client, monkeypatch):
@@ -37,7 +37,7 @@ def test_checkout_returns_session_url(client, monkeypatch):
     assert captured["payment_method_types"] == ["card", "alipay", "wechat_pay"]
     # WeChat Pay on hosted Checkout requires client="web" — Stripe 400s without it.
     assert captured["payment_method_options"] == {"wechat_pay": {"client": "web"}}
-    assert captured["metadata"]["credits"] == "100"
+    assert captured["metadata"]["credits"] == "10000"
     assert captured["metadata"]["user_id"] == "u-test"
 
 

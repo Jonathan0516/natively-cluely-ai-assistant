@@ -57,7 +57,7 @@ CATALOG: dict[str, ModelSpec] = {
         # on Google's side (measured 0.7s–70s erratic), which was the real TTFT culprit.
         upstream_model="gemini-2.5-flash-lite", base_url=GEMINI_OPENAI_BASE,
         key_env="gemini_api_key",
-        capabilities=("text", "json"), credits_per_1k_input=0.5, credits_per_1k_output=1.5,
+        capabilities=("text", "json"), credits_per_1k_input=50.0, credits_per_1k_output=150.0,
         fallbacks=("gemini-2.5-flash", "gemini-2.5-pro"), latency_hint="~1s", reasoning_style="graded",
         # Disable Gemini "thinking" before the first token: the live overlay wants speed.
         extra_params={"reasoning_effort": "none"},
@@ -66,7 +66,7 @@ CATALOG: dict[str, ModelSpec] = {
         id="gemini-2.5-flash", label="Gemini 2.5 Flash", tier="free", provider="openai_compat",
         upstream_model="gemini-2.5-flash", base_url=GEMINI_OPENAI_BASE,
         key_env="gemini_api_key",
-        capabilities=("text", "json"), credits_per_1k_input=1.0, credits_per_1k_output=3.0,
+        capabilities=("text", "json"), credits_per_1k_input=100.0, credits_per_1k_output=300.0,
         fallbacks=("gemini-2.5-flash-lite",), latency_hint="~2s", reasoning_style="graded",
         extra_params={"reasoning_effort": "none"},
     ),
@@ -75,7 +75,7 @@ CATALOG: dict[str, ModelSpec] = {
         upstream_model="gemini-2.5-pro", base_url=GEMINI_OPENAI_BASE,
         key_env="gemini_api_key",
         capabilities=("text", "json", "vision"),
-        credits_per_1k_input=5.0, credits_per_1k_output=15.0,
+        credits_per_1k_input=500.0, credits_per_1k_output=1500.0,
         extra_params={"reasoning_effort": "none"}, latency_hint="~3–5s",
         reasoning_style="graded",
     ),
@@ -85,7 +85,7 @@ CATALOG: dict[str, ModelSpec] = {
         id="gemini-31-flash", label="Gemini 3.1 Flash", tier="free", provider="openai_compat",
         upstream_model="gemini-3.1-flash-lite", base_url=GEMINI_OPENAI_BASE,
         key_env="gemini_api_key",
-        capabilities=("text", "json"), credits_per_1k_input=0.5, credits_per_1k_output=1.5,
+        capabilities=("text", "json"), credits_per_1k_input=50.0, credits_per_1k_output=150.0,
         fallbacks=("gemini-2.5-flash-lite",), latency_hint="~varies", reasoning_style="graded",
     ),
     "gemini-31-pro": ModelSpec(
@@ -93,7 +93,7 @@ CATALOG: dict[str, ModelSpec] = {
         upstream_model="gemini-3.1-pro-preview", base_url=GEMINI_OPENAI_BASE,
         key_env="gemini_api_key",
         capabilities=("text", "json", "vision"),
-        credits_per_1k_input=5.0, credits_per_1k_output=15.0,
+        credits_per_1k_input=500.0, credits_per_1k_output=1500.0,
         fallbacks=("gemini-2.5-pro",), latency_hint="~varies", reasoning_style="graded",
     ),
     # --- Groq (OpenAI-compatible). GROQ_API_KEY is configured; measured ~0.15s TTFT. ---
@@ -101,7 +101,7 @@ CATALOG: dict[str, ModelSpec] = {
         id="groq-llama", label="Groq Llama 3.3", tier="free", provider="openai_compat",
         upstream_model="llama-3.3-70b-versatile", base_url=GROQ_OPENAI_BASE,
         key_env="groq_api_key",
-        capabilities=("text", "json"), credits_per_1k_input=0.5, credits_per_1k_output=1.0,
+        capabilities=("text", "json"), credits_per_1k_input=50.0, credits_per_1k_output=100.0,
         fallbacks=("gemini-2.5-flash-lite",), latency_hint="~0.2s",
     ),
     # --- Netmind (OpenAI-compatible). NETMIND_API_KEY held by the platform; the gateway's
@@ -109,14 +109,14 @@ CATALOG: dict[str, ModelSpec] = {
     # is needed. These are *additional* selectable options — Gemini stays the default; each
     # carries a Gemini fallback so a Netmind outage degrades gracefully rather than erroring. ---
     # Netmind credits are cost-recovery at 2× Netmind's listed PAYG price (not a profit
-    # center): credits_per_1k = usd_per_1M_tokens * 2 * 7.2(FX) / 1000 = usd_per_1M * 0.0144,
-    # with 1 credit == 1 RMB. Source: https://www.netmind.ai/pricing
+    # center): credits_per_1k = usd_per_1M_tokens * 2 * 7.2(FX) / 1000 * 100 = usd_per_1M * 1.44,
+    # with 1 credit == ¥0.01 (100 credits per CNY). Source: https://www.netmind.ai/pricing
     "deepseek-v4-pro": ModelSpec(
         id="deepseek-v4-pro", label="DeepSeek V4 Pro", tier="pro", provider="openai_compat",
         upstream_model="deepseek-ai/DeepSeek-V4-Pro", base_url=NETMIND_OPENAI_BASE,
         key_env="netmind_api_key",
         # Netmind: $0.435 in / $0.87 out per 1M
-        capabilities=("text", "json"), credits_per_1k_input=0.00626, credits_per_1k_output=0.01253,
+        capabilities=("text", "json"), credits_per_1k_input=0.626, credits_per_1k_output=1.253,
         fallbacks=("gemini-2.5-pro",), latency_hint="~1.7s", reasoning_style="binary",
     ),
     "deepseek-v4-flash": ModelSpec(
@@ -124,7 +124,7 @@ CATALOG: dict[str, ModelSpec] = {
         upstream_model="deepseek-ai/DeepSeek-V4-Flash", base_url=NETMIND_OPENAI_BASE,
         key_env="netmind_api_key",
         # Netmind: $0.14 in / $0.28 out per 1M
-        capabilities=("text", "json"), credits_per_1k_input=0.00202, credits_per_1k_output=0.00403,
+        capabilities=("text", "json"), credits_per_1k_input=0.202, credits_per_1k_output=0.403,
         fallbacks=("gemini-2.5-flash-lite",), latency_hint="~1.5s", reasoning_style="binary",
     ),
     "mimo-v25": ModelSpec(
@@ -132,7 +132,7 @@ CATALOG: dict[str, ModelSpec] = {
         upstream_model="XiaomiMiMo/MiMo-V2.5", base_url=NETMIND_OPENAI_BASE,
         key_env="netmind_api_key",
         # Netmind: $0.14 in / $0.28 out per 1M
-        capabilities=("text", "json"), credits_per_1k_input=0.00202, credits_per_1k_output=0.00403,
+        capabilities=("text", "json"), credits_per_1k_input=0.202, credits_per_1k_output=0.403,
         fallbacks=("gemini-2.5-flash-lite",), latency_hint="~2.5s", reasoning_style="binary",
     ),
     "mimo-v25-pro": ModelSpec(
@@ -140,14 +140,14 @@ CATALOG: dict[str, ModelSpec] = {
         upstream_model="XiaomiMiMo/MiMo-V2.5-Pro", base_url=NETMIND_OPENAI_BASE,
         key_env="netmind_api_key",
         # Netmind: $0.435 in / $0.87 out per 1M
-        capabilities=("text", "json"), credits_per_1k_input=0.00626, credits_per_1k_output=0.01253,
+        capabilities=("text", "json"), credits_per_1k_input=0.626, credits_per_1k_output=1.253,
         fallbacks=("gemini-2.5-pro",), latency_hint="~2.5s", reasoning_style="binary",
     ),
     "embed-default": ModelSpec(
         id="embed-default", label="Embeddings", tier="free", provider="openai_compat",
         upstream_model="gemini-embedding-001", base_url=GEMINI_OPENAI_BASE,
         key_env="gemini_api_key",
-        capabilities=("embedding",), credits_per_1k_input=0.1, credits_per_1k_output=0.0,
+        capabilities=("embedding",), credits_per_1k_input=10.0, credits_per_1k_output=0.0,
         embed_dim=768,
     ),
     # Netmind embedding option (additional only — NOT the default). NV-Embed-v2 emits 4096d,
@@ -158,7 +158,7 @@ CATALOG: dict[str, ModelSpec] = {
         id="embed-netmind", label="Embeddings (Netmind NV-Embed v2)", tier="free",
         provider="openai_compat", upstream_model="nvidia/NV-Embed-v2",
         base_url=NETMIND_OPENAI_BASE, key_env="netmind_api_key",
-        capabilities=("embedding",), credits_per_1k_input=0.1, credits_per_1k_output=0.0,
+        capabilities=("embedding",), credits_per_1k_input=10.0, credits_per_1k_output=0.0,
         embed_dim=4096,
     ),
     "stt-default": ModelSpec(
@@ -166,9 +166,9 @@ CATALOG: dict[str, ModelSpec] = {
         upstream_model="nova-2", base_url="wss://api.deepgram.com/v1/listen",
         key_env="deepgram_api_key", capabilities=("stt",),
         # Cost-recovery only (not a profit center): charge 2× Deepgram's actual price.
-        # Deepgram Nova realtime/streaming PAYG = $0.0077/min; 1 credit == 1 RMB; FX 7.2.
-        #   (0.0077 * 2 * 7.2) / 60 ≈ 0.001848 credits/audio-second  (≈ 6.7 credits/hour)
-        credits_per_audio_second=0.00185,
+        # Deepgram Nova realtime/streaming PAYG = $0.0077/min; 1 credit == ¥0.01; FX 7.2.
+        #   (0.0077 * 2 * 7.2) / 60 * 100 ≈ 0.1848 credits/audio-second  (≈ 666 credits/hour)
+        credits_per_audio_second=0.185,
     ),
 }
 

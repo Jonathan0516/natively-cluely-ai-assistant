@@ -56,7 +56,7 @@ async def test_status_reflects_recorded_usage():
     status = await meter.status("u1")
     assert status.plan == "free"
     assert status.credits_total == PLANS["free"].credits_per_period
-    assert status.credits_used == 2   # 0.5*1 + 1.5*1 = 2 credits
+    assert status.credits_used == 200   # 50*1 + 150*1 = 200 credits (100 credits/CNY)
 
 
 async def test_check_raises_when_allowance_burned_and_wallet_empty():
@@ -213,14 +213,14 @@ async def test_wallet_consumed_only_beyond_free_allowance():
     # free allowance is 0 → every credit hits the wallet.
     usage_repo = InMemoryUsageRepo()
     billing = InMemoryBillingRepo()
-    await billing.grant_credits("u1", 100, "evt_seed")
+    await billing.grant_credits("u1", 1000, "evt_seed")
     meter = UsageMeter(usage_repo, CATALOG, PLANS, billing)
     spec = CATALOG["gemini-2.5-flash-lite"]
     credits = await meter.record(
         "u1", kind="json", spec=spec, usage=Usage(input_tokens=1000, output_tokens=1000)
-    )  # 0.5 + 1.5 = 2 credits
-    assert credits == 2
-    assert await billing.get_balance("u1") == 98  # wallet dropped by the 2 overflow credits
+    )  # 50 + 150 = 200 credits (100 credits/CNY)
+    assert credits == 200
+    assert await billing.get_balance("u1") == 800  # wallet dropped by the 200 overflow credits
 
 
 async def test_status_reports_wallet_balance_and_remaining():
