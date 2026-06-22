@@ -64,12 +64,14 @@ const AccountView: React.FC<AccountViewProps> = ({ phone, onSignOut }) => {
       ])
       const titleById = new Map((meetings || []).map((m) => [m.id, m.title]))
       const mapped: MeetingUsage[] = (rows || [])
-        // Skip usage tied to meetings that were never saved (discarded / too short): the
-        // credits still count toward the quota, but there is no meeting to show.
-        .filter((r) => titleById.has(r.meeting_id))
+        // Usage tied to meetings that were never saved (discarded / too short) still counts
+        // toward the quota AND is shown here, labeled "discarded" — they have no saved meeting,
+        // so they appear in Usage Details only, never in the meetings/interviews list.
         .map((r) => ({
           id: r.meeting_id,
-          meeting: titleById.get(r.meeting_id) || t("account.planUsage.untitledMeeting"),
+          meeting: titleById.has(r.meeting_id)
+            ? titleById.get(r.meeting_id) || t("account.planUsage.untitledMeeting")
+            : t("account.planUsage.discardedMeeting"),
           when: fmtWhen(r.last_used),
           kinds: r.kinds.map((k) => ({
             kind: k.kind,

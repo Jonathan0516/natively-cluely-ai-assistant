@@ -1298,6 +1298,7 @@
       "back": "返回",
       "total": "合计",
       "untitledMeeting": "未命名会议",
+      "discardedMeeting": "已放弃的会话",
       "noUsage": "本周期暂无用量记录。",
       "creditFormula": "额度 = Token 数 ÷ 1000 × 倍率（大模型/嵌入）；语音转写 = 音频秒数 × 倍率。"
     }

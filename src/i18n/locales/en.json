@@ -1297,6 +1297,7 @@
       "back": "Back",
       "total": "Total",
       "untitledMeeting": "Untitled meeting",
+      "discardedMeeting": "Discarded session",
       "noUsage": "No usage recorded this cycle yet.",
       "creditFormula": "Credits = tokens ÷ 1,000 × rate (LLM/embeddings); STT = audio seconds × rate."
     }
