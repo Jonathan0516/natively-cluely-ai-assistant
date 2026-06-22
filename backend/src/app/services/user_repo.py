@@ -85,11 +85,15 @@ class SupabaseUserRepo:
     async def get_by_id(self, user_id: str) -> User | None:
         import asyncio
 
+        from .supabase_retry import read_with_retry
+
         def _query() -> dict | None:
             res = self._client.table("users").select("*").eq("id", user_id).limit(1).execute()
             return res.data[0] if res.data else None
 
-        row = await asyncio.get_running_loop().run_in_executor(self._executor, _query)
+        row = await asyncio.get_running_loop().run_in_executor(
+            self._executor, lambda: read_with_retry(_query)
+        )
         if not row:
             return None
         return User(

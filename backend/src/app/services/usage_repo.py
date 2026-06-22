@@ -86,6 +86,14 @@ class SupabaseUsageRepo:
     async def _run(self, fn, *args):
         return await asyncio.get_running_loop().run_in_executor(self._executor, fn, *args)
 
+    async def _read(self, fn):
+        """Like _run, but retries the stale-connection transport drops that postgrest's own
+        retry misses (see supabase_retry). Reads only — never wrap writes."""
+        from .supabase_retry import read_with_retry
+        return await asyncio.get_running_loop().run_in_executor(
+            self._executor, lambda: read_with_retry(fn)
+        )
+
     async def record_event(self, user_id, *, kind, model, input_tokens=0, output_tokens=0,
                            audio_seconds=0.0, credits=0, meeting_id=None, turn_id=None) -> None:
         def _q():
@@ -104,7 +112,7 @@ class SupabaseUsageRepo:
                 .eq("user_id", user_id).gte("created_at", since).execute()
             )
             return sum(int(r["credits"]) for r in (res.data or []))
-        return await self._run(_q)
+        return await self._read(_q)
 
     async def list_events_since(self, user_id, since) -> list[dict]:
         def _q():
@@ -116,7 +124,7 @@ class SupabaseUsageRepo:
                 .order("created_at", desc=True).execute()
             )
             return res.data or []
-        return await self._run(_q)
+        return await self._read(_q)
 
     async def events_for_meeting(self, user_id, meeting_id) -> list[dict]:
         def _q():
@@ -128,7 +136,7 @@ class SupabaseUsageRepo:
                 .order("created_at", desc=False).execute()
             )
             return res.data or []
-        return await self._run(_q)
+        return await self._read(_q)
 
     async def get_subscription(self, user_id) -> tuple[str, str | None]:
         """Plan id + period anchor for the user in a single round-trip."""
@@ -141,7 +149,7 @@ class SupabaseUsageRepo:
             if not rows:
                 return DEFAULT_PLAN, None
             return rows[0].get("plan_id") or DEFAULT_PLAN, rows[0].get("period_start")
-        return await self._run(_q)
+        return await self._read(_q)
 
     async def set_plan(self, user_id, plan_id) -> None:
         def _q():

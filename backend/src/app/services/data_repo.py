@@ -125,6 +125,14 @@ class SupabaseDataRepo:
     async def _run(self, fn, *args):
         return await asyncio.get_running_loop().run_in_executor(self._executor, fn, *args)
 
+    async def _read(self, fn):
+        """Like _run, but retries the stale-connection transport drops that postgrest's own
+        retry misses (see supabase_retry). Reads only — never wrap writes."""
+        from .supabase_retry import read_with_retry
+        return await asyncio.get_running_loop().run_in_executor(
+            self._executor, lambda: read_with_retry(fn)
+        )
+
     # ---- meetings ---- #
 
     async def list_meetings(self, user_id: str, limit: int) -> list[dict]:
@@ -139,7 +147,7 @@ class SupabaseDataRepo:
             )
             return res.data or []
 
-        return await self._run(_q)
+        return await self._read(_q)
 
     async def list_unprocessed(self, user_id: str) -> list[dict]:
         def _q():
@@ -153,7 +161,7 @@ class SupabaseDataRepo:
             )
             return res.data or []
 
-        return await self._run(_q)
+        return await self._read(_q)
 
     async def get_meeting(self, user_id: str, meeting_id: str) -> dict | None:
         def _q():
@@ -167,7 +175,7 @@ class SupabaseDataRepo:
             )
             return res.data[0] if res.data else None
 
-        return await self._run(_q)
+        return await self._read(_q)
 
     async def get_transcripts(self, user_id: str, meeting_id: str) -> list[dict]:
         def _q():
@@ -181,7 +189,7 @@ class SupabaseDataRepo:
             )
             return res.data or []
 
-        return await self._run(_q)
+        return await self._read(_q)
 
     async def get_ai_interactions(self, user_id: str, meeting_id: str) -> list[dict]:
         def _q():
@@ -195,7 +203,7 @@ class SupabaseDataRepo:
             )
             return res.data or []
 
-        return await self._run(_q)
+        return await self._read(_q)
 
     async def save_meeting(
         self, user_id: str, meeting: dict, transcripts: list[dict], ai_interactions: list[dict]
@@ -327,7 +335,7 @@ class SupabaseDataRepo:
             )
             return bool(res.data)
 
-        return await self._run(_q)
+        return await self._read(_q)
 
     async def search_chunks(
         self, user_id: str, embedding: list[float], dim: int | None, meeting_id: str | None, limit: int, min_similarity: float
@@ -346,7 +354,7 @@ class SupabaseDataRepo:
             ).execute()
             return res.data or []
 
-        return await self._run(_s)
+        return await self._read(_s)
 
     async def search_summaries(
         self, user_id: str, embedding: list[float], dim: int | None, limit: int, min_similarity: float
@@ -364,7 +372,7 @@ class SupabaseDataRepo:
             ).execute()
             return res.data or []
 
-        return await self._run(_s)
+        return await self._read(_s)
 
     async def delete_embeddings(self, user_id: str, meeting_id: str) -> None:
         def _d():
@@ -413,7 +421,7 @@ class SupabaseDataRepo:
             res = self._client.table("modes").select("*").eq("user_id", user_id).order("created_at").execute()
             return res.data or []
 
-        return await self._run(_q)
+        return await self._read(_q)
 
     async def upsert_mode(self, user_id: str, mode: dict) -> None:
         def _u():
@@ -453,7 +461,7 @@ class SupabaseDataRepo:
             )
             return res.data or []
 
-        return await self._run(_q)
+        return await self._read(_q)
 
     async def add_reference_file(self, user_id: str, file: dict) -> None:
         def _a():
@@ -479,7 +487,7 @@ class SupabaseDataRepo:
             )
             return res.data or []
 
-        return await self._run(_q)
+        return await self._read(_q)
 
     async def add_note_section(self, user_id: str, section: dict) -> None:
         def _a():
@@ -512,7 +520,7 @@ class SupabaseDataRepo:
             res = self._client.table("user_profile").select("*").eq("user_id", user_id).limit(1).execute()
             return res.data[0] if res.data else None
 
-        return await self._run(_q)
+        return await self._read(_q)
 
     async def put_profile(self, user_id: str, fields: dict) -> dict:
         def _u():
@@ -527,7 +535,7 @@ class SupabaseDataRepo:
             res = self._client.table("resume_nodes").select("*").eq("user_id", user_id).order("id").execute()
             return res.data or []
 
-        return await self._run(_q)
+        return await self._read(_q)
 
     async def replace_resume_nodes(self, user_id: str, nodes: list[dict]) -> None:
         def _r():
@@ -551,7 +559,7 @@ class SupabaseDataRepo:
             res = self._client.table("user_settings").select("data").eq("user_id", user_id).limit(1).execute()
             return res.data[0]["data"] if res.data else {}
 
-        return await self._run(_q)
+        return await self._read(_q)
 
     async def put_settings(self, user_id: str, data: dict) -> dict:
         def _u():
@@ -567,7 +575,7 @@ class SupabaseDataRepo:
             res = self._client.table("user_keybinds").select("data").eq("user_id", user_id).limit(1).execute()
             return res.data[0]["data"] if res.data else []
 
-        return await self._run(_q)
+        return await self._read(_q)
 
     async def put_keybinds(self, user_id: str, data: list) -> list:
         def _u():
@@ -590,7 +598,7 @@ class SupabaseDataRepo:
             )
             return res.data[0]["value"] if res.data else None
 
-        return await self._run(_q)
+        return await self._read(_q)
 
     async def set_app_state(self, user_id: str, key: str, value: str) -> None:
         def _s():
