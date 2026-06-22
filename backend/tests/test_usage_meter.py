@@ -59,15 +59,26 @@ async def test_status_reflects_recorded_usage():
     assert status.credits_used == 2   # 0.5*1 + 1.5*1 = 2 credits
 
 
-async def test_check_raises_when_exhausted():
+async def test_check_raises_when_allowance_burned_and_wallet_empty():
+    # Exercise the allowance boundary explicitly with a custom nonzero-allowance plan (the
+    # shipped plans now have a 0 allowance). Burning the full allowance exhausts the quota ONLY
+    # when the wallet is also empty; a funded wallet keeps the user under quota.
+    from app.services.model_catalog import Plan
+    plans = {"free": Plan("free", "Free", 100, "month", ("free",))}
     repo = InMemoryUsageRepo()
-    meter = UsageMeter(repo, CATALOG, PLANS)
-    # Free plan = 1000 credits. Burn it all via one big event.
     spec = CATALOG["gemini-2.5-flash-lite"]
     await repo.record_event("u1", kind="json", model=spec.id,
-                            input_tokens=0, output_tokens=500_000, credits=1000)
+                            input_tokens=0, output_tokens=0, credits=100)  # burn the allowance
+
+    # Funded wallet → still under quota (allowance gone, but wallet covers it).
+    funded = InMemoryBillingRepo()
+    await funded.grant_credits("u1", 50, "evt")
+    st = await UsageMeter(repo, CATALOG, plans, funded).check("u1")
+    assert st.credits_remaining == 50
+
+    # Empty wallet → exhausted.
     with pytest.raises(QuotaExceeded):
-        await meter.check("u1")
+        await UsageMeter(repo, CATALOG, plans, InMemoryBillingRepo()).check("u1")
 
 
 async def test_check_passes_when_under_quota():
