@@ -342,7 +342,20 @@ export class CloudClient {
       credits_total: number
       credits_used: number
       credits_remaining: number
+      wallet_balance: number
     }>(`/llm/quota`)
+  }
+
+  /** Available credit top-up packs. */
+  getBillingPacks() {
+    return this.get<Array<{ id: string; currency: string; amount: number; credits: number }>>(
+      `/billing/packs`,
+    )
+  }
+
+  /** Create a Stripe Checkout session for a pack; returns the hosted checkout URL. */
+  createBillingCheckout(packId: string) {
+    return this.post<{ url: string }>(`/billing/checkout`, { pack_id: packId })
   }
 
   /** Models available to the user's plan (tier-gated). */

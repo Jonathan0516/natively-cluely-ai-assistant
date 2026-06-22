@@ -197,8 +197,11 @@ async def llm_quota(
     s = await meter.status(user.id)
     return {
         "plan": s.plan, "period_start": s.period_start, "period_end": s.period_end,
-        "credits_total": s.credits_total, "credits_used": s.credits_used,
+        # Combined view: periodic free allowance + persistent wallet.
+        "credits_total": s.credits_total + s.wallet_balance,
+        "credits_used": s.credits_used,
         "credits_remaining": s.credits_remaining,
+        "wallet_balance": s.wallet_balance,
     }
 
 

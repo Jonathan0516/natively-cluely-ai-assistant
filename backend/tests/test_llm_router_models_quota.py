@@ -17,13 +17,22 @@ def test_quota_returns_status_without_raising(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["plan"] == "free"
-    # credits_total here is still the bare periodic free allowance (0); credits_remaining
-    # additionally folds in the wallet balance (conftest seeds TEST_WALLET). The /quota
-    # response gains a combined credits_total (+ explicit wallet_balance field) in the task
-    # that wires the wallet into the router response.
-    assert data["credits_total"] == 0
-    assert data["credits_remaining"] > data["credits_total"]
+    # /quota returns a combined credits_total: periodic free allowance (0) + wallet
+    # balance (conftest seeds TEST_WALLET = 100_000).
+    assert data["credits_total"] == 100_000          # allowance(0) + wallet(TEST_WALLET)
+    assert data["credits_remaining"] == data["credits_total"]
     assert "period_end" in data
+
+
+def test_quota_includes_wallet_balance(client):
+    # conftest seeds TEST_USER's wallet with TEST_WALLET (100_000) credits.
+    resp = client.get("/llm/quota")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["wallet_balance"] == 100_000
+    # combined view: allowance(0) + wallet(100_000); remaining = max(0, 0-0) + 100_000
+    assert data["credits_total"] == 100_000
+    assert data["credits_remaining"] == 100_000
 
 
 def test_usage_groups_events_by_meeting(client, usage_repo):
