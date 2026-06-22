@@ -1244,6 +1244,13 @@
       "usedOfCycle": "used of {{total}} this cycle",
       "resets": "Resets {{date}}",
       "addFunds": "Add funds",
+      "walletBalance": "Wallet balance",
+      "topUpTitle": "Add Credits",
+      "topUpSubtitle": "Pick a pack — pay with Alipay / WeChat / card",
+      "topUpCredits": "{{credits}} credits",
+      "topUpHint": "Payment completes in your browser; your balance refreshes when you return.",
+      "topUpLaunching": "Opening checkout…",
+      "topUpError": "Couldn't start checkout, please try again",
       "billing": "Billing",
       "modelLibrary": "Model Library",
       "library": {

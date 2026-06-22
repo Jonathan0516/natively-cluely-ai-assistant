@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Loader2, AlertCircle, RefreshCw, Search, Download, ArrowLeft } from 'lucide-react';
 
 import ModelLibraryModal from './ModelLibraryModal';
+import { CreditTopUpModal } from './CreditTopUpModal';
 
 // Cloud-only Plan & Usage building blocks for the account page (AccountView).
 // The desktop app no longer stores LLM/STT provider keys — every request is metered through
@@ -21,6 +22,7 @@ export interface Quota {
     credits_total: number;
     credits_used: number;
     credits_remaining: number;
+    wallet_balance: number;
 }
 
 interface UsageCreditCardProps {
@@ -96,6 +98,7 @@ const fmtDate = (iso: string): string => {
 export const UsageCreditCard: React.FC<UsageCreditCardProps> = ({ quota, loading, error, onReload }) => {
     const { t } = useTranslation();
     const [libraryOpen, setLibraryOpen] = useState(false);
+    const [topUpOpen, setTopUpOpen] = useState(false);
 
     const pct = quota && quota.credits_total > 0
         ? Math.min(100, Math.round((quota.credits_used / quota.credits_total) * 100))
@@ -149,6 +152,9 @@ export const UsageCreditCard: React.FC<UsageCreditCardProps> = ({ quota, loading
                                     {t('account.planUsage.remaining')}
                                 </span>
                             </div>
+                            <div className="text-[12px] font-semibold text-text-tertiary mt-1">
+                                {t('account.planUsage.walletBalance')}: {quota.wallet_balance.toLocaleString()}
+                            </div>
                         </div>
 
                         <div className="min-w-0">
@@ -171,7 +177,11 @@ export const UsageCreditCard: React.FC<UsageCreditCardProps> = ({ quota, loading
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                        <button type="button" className="text-[13px] font-semibold rounded-xl px-4 py-2.5 bg-text-primary text-bg-card hover:opacity-90 transition-opacity">
+                        <button
+                            type="button"
+                            onClick={() => setTopUpOpen(true)}
+                            className="text-[13px] font-semibold rounded-xl px-4 py-2.5 bg-text-primary text-bg-card hover:opacity-90 transition-opacity"
+                        >
                             {t('account.planUsage.addFunds')}
                         </button>
                         <button type="button" className="text-[13px] font-semibold rounded-xl px-4 py-2.5 border border-border-muted text-text-primary hover:border-text-tertiary transition-colors">
@@ -196,6 +206,7 @@ export const UsageCreditCard: React.FC<UsageCreditCardProps> = ({ quota, loading
             )}
 
             <ModelLibraryModal open={libraryOpen} onClose={() => setLibraryOpen(false)} />
+            <CreditTopUpModal open={topUpOpen} onClose={() => setTopUpOpen(false)} />
         </section>
     );
 };

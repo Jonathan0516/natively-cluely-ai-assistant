@@ -104,6 +104,9 @@ const AccountView: React.FC<AccountViewProps> = ({ phone, onSignOut }) => {
   useEffect(() => {
     load()
     loadUsage()
+    const onFocus = () => load()
+    window.addEventListener("focus", onFocus)
+    return () => window.removeEventListener("focus", onFocus)
   }, [load, loadUsage])
 
   return (

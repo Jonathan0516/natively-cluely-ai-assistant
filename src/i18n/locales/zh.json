@@ -1245,6 +1245,13 @@
       "usedOfCycle": "/ {{total}}（本周期已用）",
       "resets": "{{date}} 重置",
       "addFunds": "充值",
+      "walletBalance": "充值余额",
+      "topUpTitle": "充值 Credits",
+      "topUpSubtitle": "选择一个充值包，支持支付宝 / 微信 / 银行卡",
+      "topUpCredits": "{{credits}} credits",
+      "topUpHint": "付款在浏览器中完成；完成后切回应用余额会自动刷新。",
+      "topUpLaunching": "正在打开支付页…",
+      "topUpError": "无法发起支付，请稍后再试",
       "billing": "账单",
       "modelLibrary": "模型库",
       "library": {
