@@ -40,8 +40,9 @@ const STT_RATES: Record<string, number> = {
     whisper: 0.006,
     'whisper-1': 0.006,
     'gpt-4o-transcribe': 0.006,
-    deepgram: 0.0043,         // Nova-3 streaming
-    'nova-3': 0.0043,
+    deepgram: 0.0077,         // Nova streaming (realtime) PAYG; $0.0043 is the pre-recorded/batch rate
+    'nova-3': 0.0077,
+    'nova-2': 0.0077,
     soniox: 0.0067,
     elevenlabs: 0.005,
     google: 0.024,            // Google STT enhanced

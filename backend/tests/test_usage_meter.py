@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from app.services.llm_types import QuotaExceeded, QuotaStatus, Usage
@@ -78,11 +80,14 @@ async def test_stt_credits_by_audio_seconds():
     repo = InMemoryUsageRepo()
     meter = UsageMeter(repo, CATALOG, PLANS)
     spec = CATALOG["stt-default"]
-    credits = await meter.record("u1", kind="stt", spec=spec, usage=Usage(), audio_seconds=100.0)
-    # 100s * credits_per_audio_second (0.1) = 10 credits
-    assert credits == 10
+    # Derive the expectation from the catalog rate so this stays correct when the
+    # cost-recovery rate is retuned. Use an hour so we're well above the 1-credit floor.
+    secs = 3600.0
+    expected = math.ceil(secs * spec.credits_per_audio_second)
+    credits = await meter.record("u1", kind="stt", spec=spec, usage=Usage(), audio_seconds=secs)
+    assert credits == expected
     used = await repo.credits_used_since("u1", "1970-01-01T00:00:00+00:00")
-    assert used == 10
+    assert used == expected
 
 
 async def test_stt_min_one_credit():

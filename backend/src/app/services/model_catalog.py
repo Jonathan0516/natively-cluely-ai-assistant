@@ -151,7 +151,10 @@ CATALOG: dict[str, ModelSpec] = {
         id="stt-default", label="Speech-to-Text", tier="free", provider="deepgram",
         upstream_model="nova-2", base_url="wss://api.deepgram.com/v1/listen",
         key_env="deepgram_api_key", capabilities=("stt",),
-        credits_per_audio_second=0.1,
+        # Cost-recovery only (not a profit center): charge 2× Deepgram's actual price.
+        # Deepgram Nova realtime/streaming PAYG = $0.0077/min; 1 credit == 1 RMB; FX 7.2.
+        #   (0.0077 * 2 * 7.2) / 60 ≈ 0.001848 credits/audio-second  (≈ 6.7 credits/hour)
+        credits_per_audio_second=0.00185,
     ),
 }
 
