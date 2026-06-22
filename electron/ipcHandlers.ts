@@ -737,6 +737,16 @@ export function initializeIpcHandlers(appState: AppState): void {
     return await CloudClient.getInstance().getLlmQuota();
   });
 
+  safeHandle("billing:get-packs", async () => {
+    const { CloudClient } = require('./services/CloudClient');
+    return await CloudClient.getInstance().getBillingPacks();
+  });
+
+  safeHandle("billing:checkout", async (_event, packId: string) => {
+    const { CloudClient } = require('./services/CloudClient');
+    return await CloudClient.getInstance().createBillingCheckout(packId);
+  });
+
   safeHandle("get-llm-models", async () => {
     const { CloudClient } = require('./services/CloudClient');
     return await CloudClient.getInstance().getLlmModels();

@@ -161,7 +161,7 @@ interface ElectronAPI {
   showOverlay: () => Promise<void>
   hideOverlay: () => Promise<void>
   getMeetingActive: () => Promise<boolean>
-  getLlmQuota: () => Promise<{ plan: string; period_start: string; period_end: string; credits_total: number; credits_used: number; credits_remaining: number }>
+  getLlmQuota: () => Promise<{ plan: string; period_start: string; period_end: string; credits_total: number; credits_used: number; credits_remaining: number; wallet_balance: number }>
   getLlmModels: () => Promise<Array<{ id: string; label: string; tier: string; capabilities: string[]; available: boolean; latency_hint?: string; reasoning?: 'graded' | 'binary' | 'none' }>>
   getLlmUsage: () => Promise<Array<{ meeting_id: string; last_used: string; input_tokens: number; output_tokens: number; audio_seconds: number; credits: number; kinds: UsageKindLine[] }>>
   getMeetingUsage: (meetingId: string) => Promise<{ meeting_id: string; input_tokens: number; output_tokens: number; audio_seconds: number; credits: number; turns: Array<{ turn_id: string | null; calls: number; input_tokens: number; output_tokens: number; audio_seconds: number; credits: number; kinds: UsageKindLine[] }> }>
@@ -464,6 +464,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   hideOverlay: () => ipcRenderer.invoke("hide-overlay"),
   getMeetingActive: () => ipcRenderer.invoke("get-meeting-active"),
   getLlmQuota: () => ipcRenderer.invoke("get-llm-quota"),
+  getBillingPacks: () => ipcRenderer.invoke("billing:get-packs"),
+  createBillingCheckout: (packId: string) => ipcRenderer.invoke("billing:checkout", packId),
   getLlmModels: () => ipcRenderer.invoke("get-llm-models"),
   getLlmUsage: () => ipcRenderer.invoke("get-llm-usage"),
   getMeetingUsage: (meetingId: string) => ipcRenderer.invoke("get-meeting-usage", meetingId),

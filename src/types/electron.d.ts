@@ -61,7 +61,9 @@ export interface ElectronAPI {
   showOverlay: () => Promise<void>
   hideOverlay: () => Promise<void>
   getMeetingActive: () => Promise<boolean>
-  getLlmQuota: () => Promise<{ plan: string; period_start: string; period_end: string; credits_total: number; credits_used: number; credits_remaining: number }>
+  getLlmQuota: () => Promise<{ plan: string; period_start: string; period_end: string; credits_total: number; credits_used: number; credits_remaining: number; wallet_balance: number }>
+  getBillingPacks: () => Promise<Array<{ id: string; currency: string; amount: number; credits: number }>>
+  createBillingCheckout: (packId: string) => Promise<{ url: string }>
   getLlmModels: () => Promise<Array<{ id: string; label: string; tier: string; capabilities: string[]; available: boolean; latency_hint?: string; reasoning?: 'graded' | 'binary' | 'none'; price_in?: number; price_out?: number }>>
   getLlmUsage: () => Promise<Array<{ meeting_id: string; last_used: string; input_tokens: number; output_tokens: number; audio_seconds: number; credits: number; kinds: UsageKindLine[] }>>
   getMeetingUsage: (meetingId: string) => Promise<{ meeting_id: string; input_tokens: number; output_tokens: number; audio_seconds: number; credits: number; turns: Array<{ turn_id: string | null; calls: number; input_tokens: number; output_tokens: number; audio_seconds: number; credits: number; kinds: UsageKindLine[] }> }>
