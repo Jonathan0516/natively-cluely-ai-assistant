@@ -51,6 +51,7 @@ def test_netmind_models_are_additional_options():
         "deepseek-v4-pro": "deepseek-ai/DeepSeek-V4-Pro",
         "deepseek-v4-flash": "deepseek-ai/DeepSeek-V4-Flash",
         "mimo-v25": "XiaomiMiMo/MiMo-V2.5",
+        "mimo-v25-pro": "XiaomiMiMo/MiMo-V2.5-Pro",
     }.items():
         spec = CATALOG[cid]
         assert spec.upstream_model == upstream
@@ -77,6 +78,7 @@ def test_reasoning_style_classification():
     assert CATALOG["deepseek-v4-pro"].reasoning_style == "binary"
     assert CATALOG["deepseek-v4-flash"].reasoning_style == "binary"
     assert CATALOG["mimo-v25"].reasoning_style == "binary"
+    assert CATALOG["mimo-v25-pro"].reasoning_style == "binary"
     assert CATALOG["groq-llama"].reasoning_style == "none"
 
 

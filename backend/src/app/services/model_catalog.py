@@ -108,26 +108,40 @@ CATALOG: dict[str, ModelSpec] = {
     # _OpenAICompatRouter dispatches by base_url+key per upstream model, so no router change
     # is needed. These are *additional* selectable options — Gemini stays the default; each
     # carries a Gemini fallback so a Netmind outage degrades gracefully rather than erroring. ---
+    # Netmind credits are cost-recovery at 2× Netmind's listed PAYG price (not a profit
+    # center): credits_per_1k = usd_per_1M_tokens * 2 * 7.2(FX) / 1000 = usd_per_1M * 0.0144,
+    # with 1 credit == 1 RMB. Source: https://www.netmind.ai/pricing
     "deepseek-v4-pro": ModelSpec(
         id="deepseek-v4-pro", label="DeepSeek V4 Pro", tier="pro", provider="openai_compat",
         upstream_model="deepseek-ai/DeepSeek-V4-Pro", base_url=NETMIND_OPENAI_BASE,
         key_env="netmind_api_key",
-        capabilities=("text", "json"), credits_per_1k_input=4.0, credits_per_1k_output=12.0,
+        # Netmind: $0.435 in / $0.87 out per 1M
+        capabilities=("text", "json"), credits_per_1k_input=0.00626, credits_per_1k_output=0.01253,
         fallbacks=("gemini-2.5-pro",), latency_hint="~1.7s", reasoning_style="binary",
     ),
     "deepseek-v4-flash": ModelSpec(
         id="deepseek-v4-flash", label="DeepSeek V4 Flash", tier="free", provider="openai_compat",
         upstream_model="deepseek-ai/DeepSeek-V4-Flash", base_url=NETMIND_OPENAI_BASE,
         key_env="netmind_api_key",
-        capabilities=("text", "json"), credits_per_1k_input=0.5, credits_per_1k_output=1.5,
+        # Netmind: $0.14 in / $0.28 out per 1M
+        capabilities=("text", "json"), credits_per_1k_input=0.00202, credits_per_1k_output=0.00403,
         fallbacks=("gemini-2.5-flash-lite",), latency_hint="~1.5s", reasoning_style="binary",
     ),
     "mimo-v25": ModelSpec(
         id="mimo-v25", label="MiMo V2.5", tier="free", provider="openai_compat",
         upstream_model="XiaomiMiMo/MiMo-V2.5", base_url=NETMIND_OPENAI_BASE,
         key_env="netmind_api_key",
-        capabilities=("text", "json"), credits_per_1k_input=0.5, credits_per_1k_output=1.5,
+        # Netmind: $0.14 in / $0.28 out per 1M
+        capabilities=("text", "json"), credits_per_1k_input=0.00202, credits_per_1k_output=0.00403,
         fallbacks=("gemini-2.5-flash-lite",), latency_hint="~2.5s", reasoning_style="binary",
+    ),
+    "mimo-v25-pro": ModelSpec(
+        id="mimo-v25-pro", label="MiMo V2.5 Pro", tier="pro", provider="openai_compat",
+        upstream_model="XiaomiMiMo/MiMo-V2.5-Pro", base_url=NETMIND_OPENAI_BASE,
+        key_env="netmind_api_key",
+        # Netmind: $0.435 in / $0.87 out per 1M
+        capabilities=("text", "json"), credits_per_1k_input=0.00626, credits_per_1k_output=0.01253,
+        fallbacks=("gemini-2.5-pro",), latency_hint="~2.5s", reasoning_style="binary",
     ),
     "embed-default": ModelSpec(
         id="embed-default", label="Embeddings", tier="free", provider="openai_compat",

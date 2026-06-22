@@ -13,9 +13,13 @@ interface LLMRate {
 }
 
 const LLM_RATES: Record<string, LLMRate> = {
+    // Netmind (https://www.netmind.ai/pricing) — USD per 1M tokens, PAYG list price
+    'deepseek-ai/DeepSeek-V4-Pro': { inputPer1M: 0.435, outputPer1M: 0.87 },
+    'deepseek-ai/DeepSeek-V4-Flash': { inputPer1M: 0.14, outputPer1M: 0.28 },
+    'XiaomiMiMo/MiMo-V2.5': { inputPer1M: 0.14, outputPer1M: 0.28 },
+    'XiaomiMiMo/MiMo-V2.5-Pro': { inputPer1M: 0.435, outputPer1M: 0.87 },
+
     // OpenAI
-    // Netmind pricing not yet entered — placeholder copied from gpt-5.5; update with real rates.
-    'deepseek-ai/DeepSeek-V4-Flash': { inputPer1M: 1.25, outputPer1M: 10.0 },
     'gpt-4o': { inputPer1M: 2.5, outputPer1M: 10.0 },
     'gpt-4o-mini': { inputPer1M: 0.15, outputPer1M: 0.6 },
     'gpt-4-turbo': { inputPer1M: 10.0, outputPer1M: 30.0 },
