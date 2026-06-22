@@ -41,7 +41,9 @@ def test_checkout_returns_session_url(client, monkeypatch):
     assert captured["metadata"]["user_id"] == "u-test"
 
 
-def test_checkout_503_when_stripe_disabled(client):
+def test_checkout_503_when_stripe_disabled(client, monkeypatch):
+    # Force-disable regardless of ambient .env (a real STRIPE_SECRET_KEY may be configured).
+    monkeypatch.setattr("app.config.Settings.stripe_enabled", property(lambda self: False))
     resp = client.post("/billing/checkout", json={"pack_id": "pack_m"})
     assert resp.status_code == 503
 
