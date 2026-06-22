@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>mido — feature showcase cards</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --accent: #007AFF;          /* real send button blue */
+      --blue-card: #6C8CF5;
+      --blue-card-2: #5876ef;
+      --ink: #0f1729;
+      /* real dark overlay tokens */
+      --panel: rgba(26,26,30,0.94);
+      --panel-border: rgba(255,255,255,0.09);
+      --txt: #ffffff;
+      --txt-2: rgba(255,255,255,0.72);
+      --txt-3: rgba(255,255,255,0.46);
+      --chip-bg: rgba(255,255,255,0.05);
+      --chip-br: rgba(255,255,255,0.10);
+      --field-bg: rgba(255,255,255,0.045);
+      --emerald: #34d399;
+      --intv: rgba(255,255,255,0.56);
+      --ubub-bg: rgba(59,130,246,0.20);
+      --ubub-br: rgba(59,130,246,0.32);
+      --ubub-tx: #dbeafe;
+      --kbd-bg: rgba(255,255,255,0.06);
+      --kbd-br: rgba(255,255,255,0.12);
+      --enter: rgba(255,255,255,0.22);
+      --ov-shadow: 0 24px 60px rgba(15,18,30,0.28);
+      /* TopPill */
+      --tp-bg: rgba(24,24,28,0.92);
+      --tp-center-bg: rgba(255,255,255,0.06);
+      --tp-center-br: rgba(255,255,255,0.10);
+      --tp-center-tx: rgba(255,255,255,0.85);
+      --tp-stop-bg: rgba(255,255,255,0.07);
+      --tp-stop-fg: rgba(255,255,255,0.85);
+    }
+
+    /* ── Light overlay skin (real app's light theme) ── */
+    .ov-light {
+      --panel: rgba(255,255,255,0.94);
+      --panel-border: rgba(0,0,0,0.07);
+      --txt: #1b2333;
+      --txt-2: #4b5563;
+      --txt-3: #9097a3;
+      --chip-bg: rgba(0,0,0,0.025);
+      --chip-br: rgba(0,0,0,0.09);
+      --field-bg: rgba(0,0,0,0.02);
+      --emerald: #0f9d6b;
+      --intv: #6b7280;
+      --ubub-bg: rgba(59,130,246,0.10);
+      --ubub-br: rgba(59,130,246,0.22);
+      --ubub-tx: #1e3a8a;
+      --kbd-bg: rgba(0,0,0,0.04);
+      --kbd-br: rgba(0,0,0,0.12);
+      --enter: rgba(0,0,0,0.20);
+      --ov-shadow: 0 18px 48px rgba(15,18,30,0.12);
+      --tp-bg: rgba(255,255,255,0.94);
+      --tp-center-bg: rgba(0,0,0,0.04);
+      --tp-center-br: rgba(0,0,0,0.10);
+      --tp-center-tx: #374151;
+      --tp-stop-bg: rgba(0,0,0,0.05);
+      --tp-stop-fg: #374151;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #eef0f3; color: var(--ink);
+      -webkit-font-smoothing: antialiased; padding: 56px 32px;
+    }
+    .version-label {
+      max-width: 1180px; margin: 0 auto 18px; font-size: 12px; font-weight: 600;
+      letter-spacing: 0.12em; text-transform: uppercase; color: #9aa2af;
+    }
+    .grid { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+    .divider { max-width: 1180px; margin: 68px auto; border: none; border-top: 1px solid #e1e3e8; }
+
+    .card {
+      border-radius: 36px; padding: 42px 40px 38px; position: relative; overflow: hidden;
+      min-height: 540px; display: flex; flex-direction: column;
+    }
+    .card-blue { background: linear-gradient(165deg, var(--blue-card), var(--blue-card-2)); color: #fff; }
+    .card-light { background: linear-gradient(165deg, #ffffff, #f3f4f7); color: var(--ink); box-shadow: 0 0 0 1px #ececef; }
+
+    .card h2 { font-size: 30px; line-height: 1.16; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 16px; }
+    .card-light h2 { color: #1b2333; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 7px; padding: 1px 12px;
+      border-radius: 999px; font-size: 28px; vertical-align: baseline;
+    }
+    .pill-blue { background: rgba(255,255,255,0.24); color: #fff; }
+    .pill-light { background: #ebedf1; color: #1b2333; }
+    .pill svg { width: 21px; height: 21px; }
+
+    .sub { font-size: 16px; line-height: 1.5; font-weight: 400; max-width: 92%; }
+    .card-blue .sub { color: rgba(255,255,255,0.92); }
+    .card-light .sub { color: #6b7280; }
+
+    .stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; margin-top: 14px; }
+
+    /* ── TopPill (real overlay control pill) ── */
+    .toppill {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: var(--tp-bg); backdrop-filter: blur(10px); border: 1px solid var(--panel-border);
+      padding: 6px; border-radius: 999px; box-shadow: 0 8px 26px rgba(15,18,30,0.18);
+    }
+    .tp-logo {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: radial-gradient(circle at 30% 25%, #fff, #d7def0);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .tp-logo svg { width: 17px; height: 17px; color: #3257d6; }
+    .tp-center {
+      display: inline-flex; align-items: center; gap: 7px; padding: 7px 15px;
+      background: var(--tp-center-bg); border: 1px solid var(--tp-center-br);
+      border-radius: 999px; color: var(--tp-center-tx); font-size: 12px; font-weight: 500; letter-spacing: 0.02em;
+    }
+    .tp-center svg { width: 14px; height: 14px; opacity: 0.8; }
+    .tp-stop {
+      width: 32px; height: 32px; border-radius: 50%; background: var(--tp-stop-bg);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .tp-stop span { width: 12px; height: 12px; border-radius: 3px; background: var(--tp-stop-fg); }
+
+    /* ── Real dark overlay panel ── */
+    .overlay {
+      width: 100%; background: var(--panel); backdrop-filter: blur(24px);
+      border: 1px solid var(--panel-border); border-radius: 24px;
+      box-shadow: var(--ov-shadow); overflow: hidden;
+    }
+    .ov-messages { padding: 16px 16px 4px; display: flex; flex-direction: column; gap: 10px; }
+
+    .row-start { display: flex; justify-content: flex-start; }
+    .row-end { display: flex; justify-content: flex-end; }
+
+    .interviewer-label { font-size: 10px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--txt-3); margin-bottom: 3px; display: flex; align-items: center; gap: 6px; }
+    .interviewer-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--emerald); animation: pulse 1.4s ease-in-out infinite; }
+    .interviewer-text { font-size: 13px; font-style: italic; color: var(--intv); line-height: 1.5; }
+
+    .bubble-user {
+      max-width: 78%; padding: 10px 14px; font-size: 14px; line-height: 1.5; font-weight: 500;
+      background: var(--ubub-bg); border: 1px solid var(--ubub-br); color: var(--ubub-tx);
+      border-radius: 18px; border-top-right-radius: 4px;
+    }
+    .bubble-system { max-width: 92%; font-size: 14px; line-height: 1.55; color: var(--txt); opacity: 0.92; }
+
+    .listening { display: flex; align-items: center; gap: 6px; padding: 4px 2px; }
+    .listening .ld { width: 7px; height: 7px; border-radius: 50%; background: var(--emerald); animation: bounce 0.9s infinite; }
+    .listening .ld:nth-child(2) { animation-delay: 0.15s; }
+    .listening .ld:nth-child(3) { animation-delay: 0.3s; }
+    .listening .lt { font-size: 11px; color: rgba(52,211,153,0.75); margin-left: 4px; }
+
+    .wave { display: flex; align-items: flex-end; gap: 3px; height: 22px; margin-left: auto; }
+    .wave span { width: 3px; border-radius: 999px; background: rgba(52,211,153,0.65); animation: bar 1.1s ease-in-out infinite; }
+
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+    @keyframes bounce { 0%,100% { transform: translateY(0); opacity: 0.6; } 50% { transform: translateY(-5px); opacity: 1; } }
+    @keyframes bar { 0%,100% { height: 4px; opacity: 0.5; } 50% { height: var(--h,16px); opacity: 1; } }
+
+    /* ── Quick action chips (real) ── */
+    .chips { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 7px; padding: 12px 14px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 999px;
+      font-size: 11px; font-weight: 500; white-space: nowrap; flex-shrink: 0;
+      background: var(--chip-bg); border: 1px solid var(--chip-br); color: var(--txt-2);
+    }
+    .chip svg { width: 12px; height: 12px; opacity: 0.7; }
+    .chip-answer { color: rgba(52,211,153,0.95); border-color: rgba(52,211,153,0.18); background: rgba(52,211,153,0.07); }
+
+    /* ── Input + bottom bar (real) ── */
+    .ov-input { padding: 0 12px 12px; }
+    .field {
+      position: relative; width: 100%; background: var(--field-bg); border: 1px solid var(--chip-br);
+      border-radius: 12px; padding: 11px 36px 11px 13px; min-height: 42px; display: flex; align-items: center;
+    }
+    .field-ph { font-size: 13px; color: var(--txt-3); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .kbd {
+      display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 19px; padding: 0 5px;
+      border-radius: 5px; font-size: 10px; font-weight: 500; background: var(--kbd-bg);
+      border: 1px solid var(--kbd-br); color: var(--txt-2);
+    }
+    .field-enter { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 11px; color: var(--enter); }
+
+    .bottombar { display: flex; align-items: center; gap: 6px; margin-top: 12px; }
+    .model {
+      display: inline-flex; align-items: center; gap: 8px; justify-content: space-between; width: 150px;
+      padding: 6px 11px; border-radius: 9px; font-size: 12px; font-weight: 500;
+      background: var(--chip-bg); border: 1px solid var(--chip-br); color: var(--txt-2);
+    }
+    .model svg { width: 14px; height: 14px; flex-shrink: 0; }
+    .vdiv { width: 1px; height: 14px; background: var(--chip-br); margin: 0 3px; }
+    .ic {
+      width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+      background: var(--chip-bg); color: var(--txt-3);
+    }
+    .ic svg { width: 14px; height: 14px; }
+    .ic.brain { color: #a78bfa; }
+    .send {
+      margin-left: auto; width: 28px; height: 28px; border-radius: 50%; background: var(--accent);
+      display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,122,255,0.35);
+    }
+    .send svg { width: 14px; height: 14px; color: #fff; }
+
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="version-label">English · Dark</div>
+  <div class="grid" data-grid="en-dark"></div>
+
+  <div class="version-label" style="margin-top:52px">English · Light</div>
+  <div class="grid ov-light" data-grid="en-light"></div>
+
+  <hr class="divider" />
+
+  <div class="version-label">中文 · 深色</div>
+  <div class="grid" data-grid="zh-dark"></div>
+
+  <div class="version-label" style="margin-top:52px">中文 · 浅色</div>
+  <div class="grid ov-light" data-grid="zh-light"></div>
+
+  <script>
+    /* ── Lucide-equivalent icon paths (match the real app's lucide-react icons) ── */
+    const I = {
+      pencil: '<path d="M21.17 6.81a1 1 0 0 0-3.99-3.98L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/>',
+      message: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+      network: '<rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/>',
+      refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+      help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+      zap: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+      chevDown: '<path d="m6 9 6 6 6-6"/>',
+      chevUp: '<path d="m18 15-6-6-6 6"/>',
+      sliders: '<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>',
+      brain: '<path d="M12 5a3 3 0 1 0-5.99.1 3 3 0 0 0-1.5 5.27A3 3 0 0 0 6 16a3 3 0 0 0 6 .5"/><path d="M12 5a3 3 0 1 1 5.99.1 3 3 0 0 1 1.5 5.27A3 3 0 0 1 18 16a3 3 0 0 1-6 .5"/><path d="M12 5v14"/>',
+      pointer: '<path d="M4.04 4.69a.5.5 0 0 1 .65-.65l16 6.5a.5.5 0 0 1-.06.95l-6.12 1.58a2 2 0 0 0-1.44 1.43l-1.58 6.13a.5.5 0 0 1-.95.06z"/>',
+      arrow: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+      spark: '<path d="M12 3l1.6 4.8L18 9l-4.4 1.2L12 15l-1.6-4.8L6 9l4.4-1.2z"/>',
+    };
+    const svg = (p, sw) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw||1.7}" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+    const svgFill = (p) => `<svg viewBox="0 0 24 24" fill="currentColor">${p}</svg>`;
+
+    const T = {
+      en: {
+        label: 'English',
+        listenH: ['mido', 'listens', 'in to the conversation'],
+        listenSub: 'It picks up the context of your meeting in real time, so it can help the moment you need it.',
+        assistH: ['When you need help, mido', 'assists', 'you instantly'],
+        assistSub: 'Hit Cmd / Ctrl + Enter and mido answers with AI right in the moment.',
+        interviewer: 'Interviewer',
+        interviewerLine: 'So, can you walk me through how you would design a rate limiter for our API gateway?',
+        listening: 'Listening…',
+        userMsg: 'What should I answer here?',
+        systemMsg: 'Start with the requirement: limit each client to N requests per window. I’d use a token-bucket per API key in Redis — it smooths bursts and is O(1) per request. Then mention sliding-window for stricter fairness.',
+        chips: ['What to answer?', 'Clarify', 'System Design', 'Recap', 'Followup', 'Answer'],
+        promptPrefix: 'Ask anything on screen or conversation, or',
+        promptSuffix: 'for selective screenshot',
+        show: 'Show', hide: 'Hide', model: 'Gemini 2.5 Flash',
+      },
+      zh: {
+        label: '中文',
+        listenH: ['mido', '聆听', '着整场对话'],
+        listenSub: '它实时捕捉会议的上下文，在你需要的那一刻随时出手相助。',
+        assistH: ['需要帮助时，mido', '协助', '你即刻搞定'],
+        assistSub: '按下 Cmd / Ctrl + Enter，mido 立即用 AI 在当下给你答案。',
+        interviewer: '面试官',
+        interviewerLine: '那你能讲一下，你会怎么为我们的 API 网关设计一个限流器吗？',
+        listening: '聆听中…',
+        userMsg: '这里我该怎么回答？',
+        systemMsg: '先明确需求：限制每个客户端在时间窗口内最多 N 次请求。我会在 Redis 里对每个 API Key 用令牌桶——能平滑突发流量，且每次请求 O(1)。再补充滑动窗口可实现更严格的公平性。',
+        chips: ['怎么回答?', '澄清', '系统设计', '回顾', '追问', '回答'],
+        promptPrefix: '可询问屏幕或会话内容, 或按',
+        promptSuffix: '选区截图',
+        show: '展开', hide: '隐藏', model: 'Gemini 2.5 Flash',
+      },
+    };
+
+    const waveBars = () => {
+      const hs = [8,14,10,16,11,7,15,9,13,6];
+      return '<div class="wave">' + hs.map(h => `<span style="--h:${h}px;animation-delay:${(Math.random()*0.5).toFixed(2)}s"></span>`).join('') + '</div>';
+    };
+
+    const chipsRow = (d) => {
+      const ic = [I.pencil, I.message, I.network, I.refresh, I.help, I.zap];
+      return '<div class="chips">' + d.chips.map((label, i) => {
+        const isAnswer = i === d.chips.length - 1;
+        return `<span class="chip ${isAnswer ? 'chip-answer' : ''}">${svg(ic[i])} ${label}</span>`;
+      }).join('') + '</div>';
+    };
+
+    const inputBar = (d) => `
+      <div class="ov-input">
+        <div class="field">
+          <span class="field-ph">${d.promptPrefix}
+            <span class="kbd">⌘</span><span class="kbd">⇧</span><span class="kbd">H</span>
+            ${d.promptSuffix}</span>
+          <span class="field-enter">↵</span>
+        </div>
+        <div class="bottombar">
+          <span class="model">${d.model} ${svg(I.chevDown)}</span>
+          <span class="vdiv"></span>
+          <span class="ic">${svg(I.sliders)}</span>
+          <span class="ic brain">${svg(I.brain)}</span>
+          <span class="ic">${svg(I.pointer)}</span>
+          <span class="send">${svg(I.arrow)}</span>
+        </div>
+      </div>`;
+
+    const topPill = (d, expanded) => `
+      <div class="toppill">
+        <span class="tp-logo">${svgFill(I.spark)}</span>
+        <span class="tp-center">${svg(expanded ? I.chevUp : I.chevDown)} ${expanded ? d.hide : d.show}</span>
+        <span class="tp-stop"><span></span></span>
+      </div>`;
+
+    const heading = (parts, pillClass, icon) => `
+      <h2>${parts[0]}
+        <span class="pill ${pillClass}">${svgFill(icon)} ${parts[1]}</span>
+        ${parts[2]}</h2>`;
+
+    // Left card — listening / recording state
+    const listenCard = (d) => `
+      <section class="card card-blue">
+        ${heading(d.listenH, 'pill-blue', I.spark)}
+        <p class="sub">${d.listenSub}</p>
+        <div class="stage">
+          ${topPill(d, true)}
+          <div class="overlay">
+            <div class="ov-messages">
+              <div class="row-start"><div style="max-width:92%">
+                <div class="interviewer-label"><span class="interviewer-dot"></span>${d.interviewer}</div>
+                <div class="interviewer-text">${d.interviewerLine}</div>
+              </div></div>
+              <div class="row-start" style="align-items:center;gap:8px;display:flex">
+                <div class="listening"><span class="ld"></span><span class="ld"></span><span class="ld"></span><span class="lt">${d.listening}</span></div>
+                ${waveBars()}
+              </div>
+            </div>
+            ${chipsRow(d)}
+            ${inputBar(d)}
+          </div>
+        </div>
+      </section>`;
+
+    // Right card — assist / answer state
+    const assistCard = (d) => `
+      <section class="card card-light">
+        ${heading(d.assistH, 'pill-light', I.spark)}
+        <p class="sub">${d.assistSub}</p>
+        <div class="stage">
+          ${topPill(d, true)}
+          <div class="overlay">
+            <div class="ov-messages">
+              <div class="row-end"><div class="bubble-user">${d.userMsg}</div></div>
+              <div class="row-start"><div class="bubble-system">${d.systemMsg}</div></div>
+            </div>
+            ${chipsRow(d)}
+            ${inputBar(d)}
+          </div>
+        </div>
+      </section>`;
+
+    function render(key, d) {
+      document.querySelector(`[data-grid="${key}"]`).innerHTML = listenCard(d) + assistCard(d);
+    }
+    render('en-dark', T.en);
+    render('en-light', T.en);
+    render('zh-dark', T.zh);
+    render('zh-light', T.zh);
+  </script>
+</body>
+</html>

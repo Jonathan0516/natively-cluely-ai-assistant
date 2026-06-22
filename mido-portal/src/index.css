@@ -1,0 +1,133 @@
+@font-face {
+  font-family: 'CelebMF';
+  src: url('./font/Masterfont - Celeb MF Medium.otf') format('opentype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'CelebMFLight';
+  src: url('./font/Masterfont - Celeb MF Light.otf') format('opentype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ───────────────────────────────────────────────────────────────────────────
+   SEMANTIC TOKEN SYSTEM
+   Carried over from the main Natively app so the portal shares one design
+   language. Dark is the default; light overrides live under [data-theme='light'].
+   ─────────────────────────────────────────────────────────────────────────── */
+:root {
+  --font-system: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+
+  /* ── DARK (default) ── */
+  --bg-sidebar: #18181B;
+  --bg-main: #1E1E21;
+  --bg-card: #242429;
+
+  --bg-toggle-switch: #303033;
+  --bg-item-surface: #27272A;
+  --bg-item-active: #2C2C2C;
+
+  --bg-primary: #000000;
+  --bg-secondary: #050505;
+  --bg-elevated: #151515;
+  --bg-input: #1A1A1A;
+
+  --text-primary: #ffffff;
+  --text-secondary: #A0A0A0;
+  --text-tertiary: #606060;
+
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-muted: #333333;
+
+  --accent-primary: #3b82f6;
+  --accent-muted: rgba(59, 130, 246, 0.15);
+
+  --bg-component: #262626;
+
+  /* Primary action button (dark) */
+  --btn-primary-bg: #2563EB;
+  --btn-primary-hover: #3b82f6;
+  --btn-primary-disabled-bg: rgba(30, 58, 138, 0.3);
+  --btn-primary-disabled-border: rgba(30, 64, 175, 0.3);
+  --btn-primary-disabled-text: rgba(96, 165, 250, 0.4);
+  --btn-primary-shadow-color: rgba(30, 58, 138, 0.3);
+}
+
+[data-theme='light'] {
+  /* ─── LIGHT MODE — Professional SaaS Standard ────────────────────────────
+     Synthesised from Linear, Vercel, Stripe, Figma, Notion design systems.
+     Canvas near-white; cards white, elevated via shadow, not thick borders.
+     ─────────────────────────────────────────────────────────────────────── */
+
+  /* Canvas / page layer */
+  --bg-primary: #F5F5F5;
+  --bg-secondary: #EBEBEB;
+
+  /* Surfaces */
+  --bg-main: #F5F5F5;
+  --bg-sidebar: #FFFFFF;
+  --bg-elevated: #FFFFFF;
+  --bg-card: #FFFFFF;
+  --bg-input: #F9FAFB;
+
+  /* Interactive elements */
+  --bg-component: #F3F4F6;
+  --bg-item-surface: #EAECEF;
+  --bg-item-active: rgba(37, 99, 235, 0.09);
+  --bg-toggle-switch: #D1D5DB;
+
+  /* Typography — Tailwind gray scale */
+  --text-primary: #111827;
+  --text-secondary: #6B7280;
+  --text-tertiary: #9CA3AF;
+
+  /* Borders — barely-there structural lines */
+  --border-subtle: rgba(0, 0, 0, 0.07);
+  --border-muted: rgba(0, 0, 0, 0.11);
+
+  /* Accent */
+  --accent-primary: #2563EB;
+  --accent-muted: rgba(37, 99, 235, 0.10);
+
+  /* Primary action button (light) */
+  --btn-primary-bg: #2563EB;
+  --btn-primary-hover: #1d4ed8;
+  --btn-primary-disabled-bg: var(--bg-input);
+  --btn-primary-disabled-border: var(--border-subtle);
+  --btn-primary-disabled-text: var(--text-tertiary);
+  --btn-primary-shadow-color: rgba(0, 0, 0, 0.05);
+}
+
+/* ── Base reset (web page — scrollable, opaque canvas) ── */
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+html {
+  background: var(--bg-main);
+}
+
+body {
+  margin: 0;
+  background: var(--bg-main);
+  color: var(--text-primary);
+  font-family: "Inter", var(--font-system);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
