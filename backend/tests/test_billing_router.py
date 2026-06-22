@@ -35,6 +35,8 @@ def test_checkout_returns_session_url(client, monkeypatch):
     assert resp.json()["url"].startswith("https://checkout.stripe.com/")
     assert captured["mode"] == "payment"
     assert captured["payment_method_types"] == ["card", "alipay", "wechat_pay"]
+    # WeChat Pay on hosted Checkout requires client="web" — Stripe 400s without it.
+    assert captured["payment_method_options"] == {"wechat_pay": {"client": "web"}}
     assert captured["metadata"]["credits"] == "100"
     assert captured["metadata"]["user_id"] == "u-test"
 

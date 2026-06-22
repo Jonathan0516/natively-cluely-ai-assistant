@@ -47,6 +47,8 @@ async def billing_checkout(
     session = stripe.checkout.Session.create(
         mode="payment",
         payment_method_types=["card", "alipay", "wechat_pay"],
+        # WeChat Pay on hosted Checkout requires the display client; Stripe 400s without it.
+        payment_method_options={"wechat_pay": {"client": "web"}},
         line_items=[{
             "quantity": 1,
             "price_data": {
