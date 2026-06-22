@@ -86,6 +86,12 @@ class UsageMeter:
         )
         # Deduct the portion of this call beyond the plan's free allowance from the
         # persistent wallet. With allowance 0 this is the full credit cost.
+        # TODO(supabase-wallet): before SupabaseBillingRepo goes live, close the TOCTOU here —
+        # this re-derives plan/period and re-reads usage after the insert (2 extra Postgres
+        # round-trips per metered call), and `used_before = used_after - credits` reconstructs
+        # the pre-insert total arithmetically, so two concurrent record() calls for one user can
+        # over/under-deduct the wallet. Thread status()'s already-computed start/used in, or have
+        # the deduction run inside the same atomic SQL path as the usage insert.
         plan_id, anchor = await self._repo.get_subscription(user_id)
         plan = self._plans.get(plan_id, self._plans["free"])
         start, _ = _period_bounds(plan.period, anchor)

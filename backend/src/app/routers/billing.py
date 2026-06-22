@@ -80,7 +80,15 @@ async def billing_webhook(
         if session.get("payment_status") == "paid":
             md = session.get("metadata") or {}
             user_id = md.get("user_id")
-            credits = int(md.get("credits") or 0)
+            # Parse defensively: a malformed `credits` must NOT raise. A 500 here returns a
+            # non-2xx to Stripe, which then retries the same event for ~3 days — a poison-event
+            # retry storm. Log and no-op instead (still 200).
+            try:
+                credits = int(md.get("credits") or 0)
+            except (TypeError, ValueError):
+                logger.warning("topup webhook bad credits metadata user=%s credits=%r event=%s",
+                               user_id, md.get("credits"), event["id"])
+                credits = 0
             if user_id and credits > 0:
                 granted = await repo.grant_credits(user_id, credits, event["id"])
                 logger.info("topup webhook user=%s credits=%s granted=%s event=%s",

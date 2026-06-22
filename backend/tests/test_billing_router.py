@@ -70,3 +70,21 @@ def test_webhook_grants_credits_idempotently(client, billing_repo, monkeypatch):
                            headers={"stripe-signature": "sig"})
         assert resp.status_code == 200
     assert asyncio.run(billing_repo.get_balance("u-test")) == before + 100  # credited once
+
+
+def test_webhook_bad_credits_metadata_no_500_no_credit(client, billing_repo, monkeypatch):
+    import asyncio
+
+    before = asyncio.run(billing_repo.get_balance("u-test"))
+    event = {
+        "id": "evt_bad", "type": "checkout.session.completed",
+        "data": {"object": {"payment_status": "paid",
+                            "metadata": {"user_id": "u-test", "credits": "not-a-number"}}},
+    }
+    monkeypatch.setattr(stripe.Webhook, "construct_event",
+                        staticmethod(lambda payload, sig, secret: event))
+    resp = client.post("/billing/webhook", content=json.dumps(event).encode(),
+                       headers={"stripe-signature": "sig"})
+    # Malformed metadata must not 500 (a non-2xx triggers Stripe to retry the poison event).
+    assert resp.status_code == 200
+    assert asyncio.run(billing_repo.get_balance("u-test")) == before  # nothing credited
