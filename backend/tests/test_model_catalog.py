@@ -120,5 +120,7 @@ def test_credits_rounds_up_from_tokens():
 
 
 def test_plans_define_free_and_pro():
-    assert PLANS["free"].credits_per_period > 0
+    # The wallet (persistent purchased credits) is now the sole credit source: both plans'
+    # periodic free allowance is 0.
+    assert PLANS["free"].credits_per_period == 0
     assert "pro" in PLANS["pro"].allowed_tiers

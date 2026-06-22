@@ -9,9 +9,10 @@ async def test_embeddings_returns_vectors_and_records_usage(client, usage_repo):
     assert used >= 1
 
 
-async def test_embeddings_402_when_quota_exhausted(client, usage_repo):
-    await usage_repo.record_event("u-test", kind="embeddings", model="embed-default",
-                                  input_tokens=0, output_tokens=0, credits=1000)
+async def test_embeddings_402_when_quota_exhausted(client, usage_repo, billing_repo):
+    # Free allowance is 0; the wallet is the sole credit source, so quota is only exhausted
+    # once the wallet itself is drained (conftest seeds TEST_WALLET).
+    await billing_repo.consume_credits("u-test", await billing_repo.get_balance("u-test"))
     resp = client.post("/llm/embeddings", json={"texts": ["hi"]})
     assert resp.status_code == 402
     assert resp.json()["detail"]["error"] == "quota_exceeded"

@@ -17,7 +17,12 @@ def test_quota_returns_status_without_raising(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["plan"] == "free"
-    assert data["credits_remaining"] == data["credits_total"]
+    # credits_total here is still the bare periodic free allowance (0); credits_remaining
+    # additionally folds in the wallet balance (conftest seeds TEST_WALLET). The /quota
+    # response gains a combined credits_total (+ explicit wallet_balance field) in the task
+    # that wires the wallet into the router response.
+    assert data["credits_total"] == 0
+    assert data["credits_remaining"] > data["credits_total"]
     assert "period_end" in data
 
 

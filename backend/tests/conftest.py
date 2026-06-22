@@ -16,6 +16,7 @@ from app.deps import (
     get_user_repo,
 )
 from app.main import app
+from app.services.billing_repo import InMemoryBillingRepo
 from app.services.jwt_service import JwtService
 from app.services.llm_types import ChatDelta, EmbedResult, GenResult, Usage
 from app.services.model_catalog import CATALOG, PLANS
@@ -26,6 +27,11 @@ from app.services.user_repo import InMemoryUserRepo, User
 TEST_USER = User(
     id="u-test", phone="+10000000000", created_at="2026-01-01", last_login_at="2026-01-01"
 )
+
+# Free allowance is now 0, so the shared test user needs wallet credits to pass meter.check()
+# on the LLM endpoints (chat/json/embeddings). Seed a generous balance here so those existing
+# router tests keep returning 200. Tests asserting exact wallet math reference this constant.
+TEST_WALLET = 100_000
 
 
 class FakeUpstream:
@@ -91,8 +97,15 @@ def usage_repo():
 
 
 @pytest.fixture
-def usage_meter(usage_repo):
-    return UsageMeter(usage_repo, CATALOG, PLANS)
+def billing_repo():
+    repo = InMemoryBillingRepo()
+    asyncio.run(repo.grant_credits(TEST_USER.id, TEST_WALLET, "seed"))
+    return repo
+
+
+@pytest.fixture
+def usage_meter(usage_repo, billing_repo):
+    return UsageMeter(usage_repo, CATALOG, PLANS, billing_repo)
 
 
 @pytest.fixture

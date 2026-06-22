@@ -46,16 +46,20 @@ class QuotaStatus:
     plan: str
     period_start: str
     period_end: str
-    credits_total: int
+    credits_total: int          # plan free allowance for the period
     credits_used: int
+    wallet_balance: int = 0      # persistent purchased credits
 
     @property
     def credits_remaining(self) -> int:
-        return max(0, self.credits_total - self.credits_used)
+        # Free quota left this period, plus the standing wallet. Overflow beyond the free
+        # allowance has already been deducted from wallet_balance, so clamp the free part
+        # at 0 rather than computing (total - used) to avoid double-counting.
+        return max(0, self.credits_total - self.credits_used) + self.wallet_balance
 
     @property
     def exhausted(self) -> bool:
-        return self.credits_used >= self.credits_total
+        return self.credits_used >= self.credits_total and self.wallet_balance <= 0
 
 
 class QuotaExceeded(Exception):

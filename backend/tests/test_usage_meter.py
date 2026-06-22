@@ -2,6 +2,7 @@ import math
 
 import pytest
 
+from app.services.billing_repo import InMemoryBillingRepo
 from app.services.llm_types import QuotaExceeded, QuotaStatus, Usage
 from app.services.model_catalog import CATALOG, PLANS
 from app.services.usage_meter import UsageMeter
@@ -71,9 +72,11 @@ async def test_check_raises_when_exhausted():
 
 async def test_check_passes_when_under_quota():
     repo = InMemoryUsageRepo()
-    meter = UsageMeter(repo, CATALOG, PLANS)
-    status = await meter.check("u1")   # no usage yet
-    assert status.credits_remaining == PLANS["free"].credits_per_period
+    billing = InMemoryBillingRepo()
+    await billing.grant_credits("u1", 500, "evt_seed")
+    meter = UsageMeter(repo, CATALOG, PLANS, billing)
+    status = await meter.check("u1")
+    assert status.credits_remaining == 500  # allowance(0) + wallet(500)
 
 
 async def test_stt_credits_by_audio_seconds():
@@ -193,3 +196,44 @@ async def test_meeting_turn_usage_groups_by_turn_and_kind():
     assert set(sys_kinds) == {"stt", "embedding"}
     assert sys_kinds["stt"]["audio_seconds"] == 50.0
     assert sys_kinds["embedding"]["credits"] == 1
+
+
+async def test_wallet_consumed_only_beyond_free_allowance():
+    # free allowance is 0 → every credit hits the wallet.
+    usage_repo = InMemoryUsageRepo()
+    billing = InMemoryBillingRepo()
+    await billing.grant_credits("u1", 100, "evt_seed")
+    meter = UsageMeter(usage_repo, CATALOG, PLANS, billing)
+    spec = CATALOG["gemini-2.5-flash-lite"]
+    credits = await meter.record(
+        "u1", kind="json", spec=spec, usage=Usage(input_tokens=1000, output_tokens=1000)
+    )  # 0.5 + 1.5 = 2 credits
+    assert credits == 2
+    assert await billing.get_balance("u1") == 98  # wallet dropped by the 2 overflow credits
+
+
+async def test_status_reports_wallet_balance_and_remaining():
+    usage_repo = InMemoryUsageRepo()
+    billing = InMemoryBillingRepo()
+    await billing.grant_credits("u1", 100, "evt_seed")
+    meter = UsageMeter(usage_repo, CATALOG, PLANS, billing)
+    st = await meter.status("u1")
+    assert st.wallet_balance == 100
+    assert st.credits_remaining == 100  # allowance(0) + wallet(100)
+    assert st.exhausted is False
+
+
+async def test_check_blocks_when_allowance_zero_and_wallet_empty():
+    usage_repo = InMemoryUsageRepo()
+    meter = UsageMeter(usage_repo, CATALOG, PLANS, InMemoryBillingRepo())
+    with pytest.raises(QuotaExceeded):
+        await meter.check("u1")  # no free allowance, no wallet → blocked
+
+
+async def test_check_passes_with_wallet_balance():
+    usage_repo = InMemoryUsageRepo()
+    billing = InMemoryBillingRepo()
+    await billing.grant_credits("u1", 10, "evt_seed")
+    meter = UsageMeter(usage_repo, CATALOG, PLANS, billing)
+    st = await meter.check("u1")
+    assert st.credits_remaining == 10

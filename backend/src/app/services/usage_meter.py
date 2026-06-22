@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import math
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 from .llm_types import QuotaExceeded, QuotaStatus, TierNotAllowed, Usage
 from .model_catalog import ModelSpec, Plan, credits_for
 from .usage_repo import UsageRepo
+
+if TYPE_CHECKING:
+    from .billing_repo import BillingRepo
 
 
 def _kind_category(kind: str) -> str:
@@ -39,19 +43,24 @@ def _period_bounds(period: str, anchor_iso: str | None) -> tuple[str, str]:
 
 
 class UsageMeter:
-    def __init__(self, repo: UsageRepo, catalog: dict[str, ModelSpec], plans: dict[str, Plan]):
+    def __init__(self, repo: UsageRepo, catalog: dict[str, ModelSpec], plans: dict[str, Plan],
+                 billing_repo: BillingRepo | None = None):
+        from .billing_repo import InMemoryBillingRepo
         self._repo = repo
         self._catalog = catalog
         self._plans = plans
+        self._billing = billing_repo or InMemoryBillingRepo()
 
     async def status(self, user_id: str) -> QuotaStatus:
         plan_id, anchor = await self._repo.get_subscription(user_id)
         plan = self._plans.get(plan_id, self._plans["free"])
         start, end = _period_bounds(plan.period, anchor)
         used = await self._repo.credits_used_since(user_id, start)
+        balance = await self._billing.get_balance(user_id)
         return QuotaStatus(
             plan=plan.id, period_start=start, period_end=end,
             credits_total=plan.credits_per_period, credits_used=used,
+            wallet_balance=balance,
         )
 
     async def check(self, user_id: str) -> QuotaStatus:
@@ -75,6 +84,17 @@ class UsageMeter:
             audio_seconds=audio_seconds, credits=credits,
             meeting_id=meeting_id, turn_id=turn_id,
         )
+        # Deduct the portion of this call beyond the plan's free allowance from the
+        # persistent wallet. With allowance 0 this is the full credit cost.
+        plan_id, anchor = await self._repo.get_subscription(user_id)
+        plan = self._plans.get(plan_id, self._plans["free"])
+        start, _ = _period_bounds(plan.period, anchor)
+        used_after = await self._repo.credits_used_since(user_id, start)  # includes this event
+        used_before = used_after - credits
+        allowance = plan.credits_per_period
+        overflow = max(0, used_after - allowance) - max(0, used_before - allowance)
+        if overflow > 0:
+            await self._billing.consume_credits(user_id, overflow)
         return credits
 
     def _aggregate_kinds(self, events: list[dict]) -> dict:

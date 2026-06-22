@@ -1,3 +1,4 @@
+import asyncio
 import json
 import time
 
@@ -49,14 +50,13 @@ def test_stt_attributes_usage_to_meeting(client, jwt_svc, usage_repo, test_user)
     assert stt and stt[-1]["meeting_id"] == "m-stt"
 
 
-def test_stt_quota_exhausted_closes_4029(client, jwt_svc, usage_repo, test_user):
+def test_stt_quota_exhausted_closes_4029(client, jwt_svc, usage_repo, billing_repo, test_user):
     token = jwt_svc.issue(test_user.id, test_user.phone).access_token
-    # pre-seed exhausted usage within the current period (future ts so credits_used_since counts it)
-    usage_repo._events.append({
-        "user_id": test_user.id, "kind": "stt", "model": "stt-default",
-        "input_tokens": 0, "output_tokens": 0, "audio_seconds": 0, "credits": 1000,
-        "created_at": "2099-01-01T00:00:00+00:00",
-    })
+    # Free allowance is 0; the wallet is the sole credit source, so drain it (conftest seeds
+    # TEST_WALLET) to simulate quota exhaustion.
+    asyncio.run(billing_repo.consume_credits(
+        test_user.id, asyncio.run(billing_repo.get_balance(test_user.id))
+    ))
     with pytest.raises(WebSocketDisconnect) as ei:
         with client.websocket_connect(f"/llm/stt?token={token}") as ws:
             ws.receive_text()

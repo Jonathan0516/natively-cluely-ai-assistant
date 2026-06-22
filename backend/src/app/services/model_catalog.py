@@ -176,8 +176,10 @@ PLANS: dict[str, Plan] = {
     # Both tiers are unlocked on every plan for now: pro-tier models (Gemini 2.5 Pro, 3.1 Pro,
     # DeepSeek V4 Pro) are selectable and callable regardless of plan. Re-narrow free's
     # allowed_tiers to ("free",) to reinstate the pro paywall.
-    "free": Plan("free", "Free", 1000, "month", ("free", "pro")),
-    "pro": Plan("pro", "Pro", 9999, "month", ("free", "pro")),
+    # The wallet (persistent purchased credits) is now the sole credit source: both plans get
+    # a 0 free allowance.
+    "free": Plan("free", "Free", 0, "month", ("free", "pro")),
+    "pro": Plan("pro", "Pro", 0, "month", ("free", "pro")),
 }
 
 DEFAULT_PLAN = "free"

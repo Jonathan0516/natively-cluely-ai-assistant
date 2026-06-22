@@ -10,10 +10,10 @@ async def test_json_returns_text_and_records_usage(client, usage_repo):
     assert used >= 1
 
 
-async def test_json_402_when_quota_exhausted(client, usage_repo):
-    # pre-burn the entire free quota (1000 credits) so the next call is rejected
-    await usage_repo.record_event("u-test", kind="json", model="gemini-2.5-flash-lite",
-                                  input_tokens=0, output_tokens=0, credits=1000)
+async def test_json_402_when_quota_exhausted(client, usage_repo, billing_repo):
+    # Free allowance is 0; the wallet is the sole credit source, so drain it (conftest seeds
+    # TEST_WALLET) to simulate quota exhaustion.
+    await billing_repo.consume_credits("u-test", await billing_repo.get_balance("u-test"))
     resp = client.post("/llm/json", json={
         "model": "gemini-2.5-flash-lite",
         "messages": [{"role": "user", "content": "hi"}],
