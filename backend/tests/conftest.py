@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.config import get_settings
 from app.deps import (
+    get_billing_repo,
     get_current_user,
     get_jwt_service,
     get_llm_gateway,
@@ -139,7 +140,8 @@ def user_repo_with_test_user():
 
 
 @pytest.fixture
-def client(usage_repo, usage_meter, fake_gateway, fake_stt, user_repo_with_test_user, jwt_svc):
+def client(usage_repo, usage_meter, fake_gateway, fake_stt, user_repo_with_test_user, jwt_svc,
+           billing_repo):
     app.dependency_overrides[get_current_user] = lambda: TEST_USER
     app.dependency_overrides[get_usage_repo] = lambda: usage_repo
     app.dependency_overrides[get_usage_meter] = lambda: usage_meter
@@ -147,5 +149,6 @@ def client(usage_repo, usage_meter, fake_gateway, fake_stt, user_repo_with_test_
     app.dependency_overrides[get_stt_upstream] = lambda: fake_stt
     app.dependency_overrides[get_user_repo] = lambda: user_repo_with_test_user
     app.dependency_overrides[get_jwt_service] = lambda: jwt_svc
+    app.dependency_overrides[get_billing_repo] = lambda: billing_repo
     yield TestClient(app)
     app.dependency_overrides.clear()

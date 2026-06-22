@@ -8,6 +8,7 @@ from fastapi import Depends, Header, HTTPException, status
 from .config import Settings, get_settings
 from .services.aliyun_captcha import AliyunCaptchaVerifier, CaptchaVerifier, NoopCaptchaVerifier
 from .services.aliyun_pnvs import AliyunPnvsSmsSender, MockSmsSender, SmsSender
+from .services.billing_repo import BillingRepo, InMemoryBillingRepo, SupabaseBillingRepo
 from .services.data_repo import DataRepo, InMemoryDataRepo, SupabaseDataRepo
 from .services.jwt_service import JwtService
 from .services.llm_gateway import LLMGateway
@@ -113,8 +114,21 @@ def get_usage_repo() -> UsageRepo:
     )
 
 
-def get_usage_meter(repo: UsageRepo = Depends(get_usage_repo)) -> UsageMeter:
-    return UsageMeter(repo, CATALOG, PLANS)
+@lru_cache
+def get_billing_repo() -> BillingRepo:
+    settings = get_settings()
+    if not settings.supabase_enabled:
+        return InMemoryBillingRepo()
+    return SupabaseBillingRepo(
+        url=settings.supabase_url, service_role_key=settings.supabase_service_role_key
+    )
+
+
+def get_usage_meter(
+    repo: UsageRepo = Depends(get_usage_repo),
+    billing: BillingRepo = Depends(get_billing_repo),
+) -> UsageMeter:
+    return UsageMeter(repo, CATALOG, PLANS, billing)
 
 
 class _OpenAICompatRouter:

@@ -41,9 +41,16 @@ class Settings(BaseSettings):
     jwt_access_ttl_seconds: int = Field(default=3600)
     jwt_refresh_ttl_seconds: int = Field(default=60 * 60 * 24 * 30)
 
+    stripe_secret_key: str = Field(default="")
+    stripe_webhook_secret: str = Field(default="")
+
     @property
     def aliyun_enabled(self) -> bool:
         return bool(self.aliyun_access_key_id and self.aliyun_access_key_secret)
+
+    @property
+    def stripe_enabled(self) -> bool:
+        return bool(self.stripe_secret_key)
 
     @property
     def supabase_enabled(self) -> bool:
